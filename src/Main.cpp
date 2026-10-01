@@ -1,7 +1,9 @@
-#include <iostream>
+#include "Application/Application.hpp"
 
 int main()
 {
-    std::cout << "Hello, Vulkan!\n";
+    Application app;
+    app.Run();
+
     return 0;
 }

@@ -68,20 +68,32 @@ jobs:
           - name: Linux
             os: ubuntu-24.04
             preset: debug
+            cmd: |
+              sudo apt-get update
+              sudo apt-get install --yes wayland-protocols libwayland-dev
 
           - name: Linux
             os: ubuntu-24.04
             preset: release
-
+            cmd: |
+              sudo apt-get update
+              sudo apt-get install --yes wayland-protocols libwayland-dev
+              
           - name: macOS
             os: macos-15
             preset: debug
+            cmd:
 
           - name: macOS
             os: macos-15
             preset: release
+            cmd:
 
     steps:
+      - name: Install dependencies
+        if: ${{ matrix.cmd }}
+        run: ${{ matrix.cmd }}
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -113,6 +125,11 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes wayland-protocols libwayland-dev
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -149,6 +166,11 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes wayland-protocols libwayland-dev
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
