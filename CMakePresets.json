@@ -1,0 +1,106 @@
+{
+    "$schema": "https://cmake.org/cmake/api/v1/schema/cmake-presets.json",
+    "version": 8,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 25,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja Multi-Config",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "ENABLE_PCH": "ON",
+                "ENABLE_UNITY_BUILD": "OFF",
+                "ENABLE_COMPILER_CACHE": "ON",
+                "BUILD_TRACY": "ON"
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "base",
+            "displayName": "Debug",
+            "description": "Fast debug build without optimization or debug symbols."
+        },
+        {
+            "name": "release",
+            "inherits": "base",
+            "displayName": "Release",
+            "description": "Optimized release build."
+        },
+        {
+            "name": "clang-tidy",
+            "inherits": "base",
+            "displayName": "Clang-Tidy",
+            "description": "Debug build with clang-tidy enabled.",
+            "cacheVariables": {
+                "ENABLE_CLANG_TIDY": "ON",
+                "ENABLE_PCH": "OFF"
+            }
+        },
+        {
+            "name": "asan",
+            "inherits": "base",
+            "displayName": "AddressSanitizer",
+            "description": "Debug build with AddressSanitizer.",
+            "condition": {
+                "type": "matches",
+                "string": "${hostSystemName}",
+                "regex": "^(Linux|Darwin)$"
+            },
+            "cacheVariables": {
+                "ENABLE_ASAN": "ON"
+            }
+        },
+        {
+            "name": "ubsan",
+            "inherits": "base",
+            "displayName": "UndefinedBehaviorSanitizer",
+            "description": "Debug build with UndefinedBehaviorSanitizer.",
+            "condition": {
+                "type": "matches",
+                "string": "${hostSystemName}",
+                "regex": "^(Linux|Darwin)$"
+            },
+            "cacheVariables": {
+                "ENABLE_UBSAN": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "configuration": "Debug",
+            "jobs": 0
+        },
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "configuration": "Release",
+            "jobs": 0
+        },
+        {
+            "name": "clang-tidy",
+            "configurePreset": "clang-tidy",
+            "configuration": "Debug",
+            "jobs": 0
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan",
+            "configuration": "Debug",
+            "jobs": 0
+        },
+        {
+            "name": "ubsan",
+            "configurePreset": "ubsan",
+            "configuration": "Debug",
+            "jobs": 0
+        }
+    ]
+}

@@ -1,0 +1,180 @@
+name: CI
+
+"on":
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  VULKAN_SDK_VERSION: "1.4.363.0"
+  PYTHON_VERSION: "3.13"
+
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Formatting
+  # ---------------------------------------------------------------------------
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-format
+
+      - name: Check formatting
+        run: python scripts/ci.py format
+
+
+  # ---------------------------------------------------------------------------
+  # Cross-platform builds
+  # ---------------------------------------------------------------------------
+
+  build:
+    name: ${{ matrix.name }} / ${{ matrix.preset }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-24.04
+            preset: debug
+
+          - name: Linux
+            os: ubuntu-24.04
+            preset: release
+
+          - name: macOS
+            os: macos-15
+            preset: debug
+
+          - name: macOS
+            os: macos-15
+            preset: release
+
+          - name: Windows
+            os: windows-2025
+            preset: debug
+
+          - name: Windows
+            os: windows-2025
+            preset: release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          optional_components: com.lunarg.vulkan.glm,com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
+          cache: true
+          stripdown: false
+
+      - name: Build
+        run: python scripts/ci.py build --preset ${{ matrix.preset }}
+
+
+  # ---------------------------------------------------------------------------
+  # Static analysis
+  # ---------------------------------------------------------------------------
+
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-tidy
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          optional_components: com.lunarg.vulkan.glm,com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
+          cache: true
+          stripdown: false
+
+      - name: Run clang-tidy
+        run: python scripts/ci.py lint
+
+
+  # ---------------------------------------------------------------------------
+  # AddressSanitizer + UndefinedBehaviorSanitizer
+  # ---------------------------------------------------------------------------
+
+  sanitizers:
+    name: sanitizers
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          optional_components: com.lunarg.vulkan.glm,com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
+          cache: true
+          stripdown: false
+
+      - name: AddressSanitizer
+        run: python scripts/ci.py asan
+
+      - name: UndefinedBehaviorSanitizer
+        run: python scripts/ci.py ubsan

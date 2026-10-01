@@ -1,0 +1,9 @@
+[submodule "extern/slang"]
+	path = extern/slang
+	url = https://github.com/shader-slang/slang
+[submodule "extern/tracy"]
+	path = extern/tracy
+	url = https://github.com/wolfpld/tracy
+[submodule "extern/glfw"]
+	path = extern/glfw
+	url = https://github.com/glfw/glfw
