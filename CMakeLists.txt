@@ -166,22 +166,19 @@ list(PREPEND CMAKE_PREFIX_PATH
 find_package(Vulkan REQUIRED)
 
 # ------------------------------------------------------------------------------
-# Vulkan SDK: GLM
+# GLM
 #
-# GLM is header-only for normal application use, so an INTERFACE dependency is
-# exactly what we want here.
+# GLM is vendored as a git submodule under extern/glm. It is header-only, so
+# expose it through GLM's CMake target.
 # ------------------------------------------------------------------------------
-find_path(GLM_INCLUDE_DIR
-    NAMES glm/glm.hpp
-    PATHS
-    "${VULKAN_SDK_ROOT}/include"
-    REQUIRED
-)
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/glm/CMakeLists.txt")
+    message(FATAL_ERROR "Missing extern/glm")
+endif()
 
-add_library(vulkan_sdk_glm INTERFACE)
-target_include_directories(vulkan_sdk_glm
-    INTERFACE
-    "${GLM_INCLUDE_DIR}"
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/extern/glm"
+    "${CMAKE_BINARY_DIR}/extern/glm"
+    EXCLUDE_FROM_ALL
 )
 
 # ------------------------------------------------------------------------------
@@ -482,7 +479,7 @@ target_link_libraries(${APP_NAME}
     PRIVATE
     glfw
     slang
-    vulkan_sdk_glm
+    glm::glm
     vulkan_sdk_vma
     ${VOLK_TARGET}
 )
