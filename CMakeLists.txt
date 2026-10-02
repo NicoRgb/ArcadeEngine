@@ -11,7 +11,7 @@ project(${APP_NAME}
     LANGUAGES CXX
 )
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -463,6 +463,18 @@ if(VULKAN_PLATFORM_DEFINE)
     )
 endif()
 
+# ------------------------------------------------------------------------------
+# Build configuration defines
+#
+# APP_DEBUG is defined for Debug builds.
+# APP_RELEASE is defined for Release builds.
+# ------------------------------------------------------------------------------
+target_compile_definitions(${APP_NAME}
+    PRIVATE
+    $<$<CONFIG:Debug>:APP_DEBUG>
+    $<$<CONFIG:Release>:APP_RELEASE>
+)
+
 # GLFW has its own Vulkan support and doesn't need to pull in OpenGL headers.
 target_compile_definitions(${APP_NAME}
     PRIVATE
@@ -580,10 +592,10 @@ message(STATUS "==========================================")
 message(STATUS " ${APP_NAME}")
 message(STATUS "==========================================")
 message(STATUS " Build type:      ${CMAKE_BUILD_TYPE}")
-message(STATUS " C++ standard:    C++20")
+message(STATUS " C++ standard:    C++23")
 message(STATUS " PCH:             ${ENABLE_PCH}")
 message(STATUS " Unity build:     ${ENABLE_UNITY_BUILD}")
-message(STATUS " Tracy:           ${BUILD_TRACY}")
+message(STATUS " Tracy:            ${BUILD_TRACY}")
 message(STATUS " Vulkan SDK:      ${VULKAN_SDK_ROOT}")
 message(STATUS "==========================================")
 message(STATUS "")
