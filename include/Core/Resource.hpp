@@ -58,13 +58,38 @@ class Resource
 public:
     Resource() = default;
 
+    template <typename U>
+    Resource(const Resource<U>& other) noexcept
+        requires(std::is_convertible_v<U*, T*>)
+        : m_Id(other.m_Id), m_Pointer(other.m_Pointer)
+    {
+    }
+
     T* operator->() noexcept { return m_Pointer.get(); }
-
     const T* operator->() const noexcept { return m_Pointer.get(); }
-
     T& operator*() noexcept { return *m_Pointer; }
-
     const T& operator*() const noexcept { return *m_Pointer; }
+
+    template <typename U>
+    [[nodiscard]]
+    Resource<U> DynamicCast() const noexcept
+    {
+        auto pointer = std::dynamic_pointer_cast<U>(m_Pointer);
+        if (!pointer)
+        {
+            return {};
+        }
+
+        return Resource<U>(m_Id, std::move(pointer));
+    }
+
+    template <typename U>
+    [[nodiscard]]
+    Resource<U> StaticCast() const noexcept
+    {
+        auto pointer = std::static_pointer_cast<U>(m_Pointer);
+        return Resource<U>(m_Id, std::move(pointer));
+    }
 
     [[nodiscard]]
     T* Get() noexcept
@@ -257,14 +282,14 @@ public:
     {
         if (!object)
         {
-            return std::unexpected(Error::InvalidArgument);
+            return MakeError(Error::InvalidArgument);
         }
 
         auto result = Insert<T>(ResourceType::Owned, name, std::move(object));
 
         if (!result)
         {
-            return std::unexpected(result.error());
+            return MakeError(result.error());
         }
 
         const auto* entry = static_cast<const Entry<T>*>(m_Entries.at(result->Id()).get());
@@ -278,7 +303,7 @@ public:
     {
         if (!object)
         {
-            return std::unexpected(Error::InvalidArgument);
+            return MakeError(Error::InvalidArgument);
         }
 
         return InsertOwned<T>(name, std::shared_ptr<T>(std::move(object)));
@@ -292,7 +317,7 @@ public:
 
         if (!entry || entry->Type != ResourceType::Shared)
         {
-            return std::unexpected(Error::NotFound);
+            return MakeError(Error::NotFound);
         }
 
         return Resource<T>(rid, entry->Object);
@@ -306,7 +331,7 @@ public:
 
         if (!entry || entry->Type != ResourceType::Owned)
         {
-            return std::unexpected(Error::NotFound);
+            return MakeError(Error::NotFound);
         }
 
         return BorrowedResource<T>(rid, entry->Object);
@@ -320,7 +345,7 @@ public:
 
         if (!rid)
         {
-            return std::unexpected(Error::NotFound);
+            return MakeError(Error::NotFound);
         }
 
         return GetShared<T>(*rid);
@@ -334,7 +359,7 @@ public:
 
         if (!rid)
         {
-            return std::unexpected(Error::NotFound);
+            return MakeError(Error::NotFound);
         }
 
         return GetOwned<T>(*rid);
@@ -360,38 +385,6 @@ public:
         return GetOrCreateShared<T>(singletonName, std::forward<Args>(args)...);
     }
 
-    /*
-    template <typename T, typename Loader, typename Source>
-    [[nodiscard]]
-    Result<Resource<T>> LoadShared(std::string_view name, const Source& source, Loader&& loader)
-    {
-        if (auto existing = FindShared<T>(name); existing)
-            return *existing;
-
-        auto object = std::invoke(std::forward<Loader>(loader), source);
-
-        if (!object)
-            return std::unexpected(object.error());
-
-        return InsertShared<T>(name, std::move(*object));
-    }
-
-    template <typename T, typename Loader, typename Source>
-    [[nodiscard]]
-    Result<BorrowedResource<T>> LoadOwned(std::string_view name, const Source& source,
-                                          Loader&& loader)
-    {
-        if (auto existing = FindOwned<T>(name); existing)
-            return *existing;
-
-        auto object = std::invoke(std::forward<Loader>(loader), source);
-
-        if (!object)
-            return std::unexpected(object.error());
-
-        return InsertOwned<T>(name, std::move(*object));
-    }*/
-
     [[nodiscard]]
     Result<void> Unload(ResourceId rid)
     {
@@ -399,7 +392,7 @@ public:
 
         if (it == m_Entries.end())
         {
-            return std::unexpected(Error::NotFound);
+            return MakeError(Error::NotFound);
         }
 
         EraseEntry(it);
@@ -413,7 +406,7 @@ public:
 
         if (it == m_Entries.end() || it->second->Type != ResourceType::Owned)
         {
-            return std::unexpected(Error::NotFound);
+            return MakeError(Error::NotFound);
         }
 
         EraseEntry(it);
@@ -440,14 +433,14 @@ private:
     {
         if (!object)
         {
-            return std::unexpected(Error::InvalidArgument);
+            return MakeError(Error::InvalidArgument);
         }
 
         const ResourceKey key{.Type = typeid(T), .Name = std::string(name)};
 
         if (!name.empty() && m_ByKey.contains(key))
         {
-            return std::unexpected(Error::InvalidArgument);
+            return MakeError(Error::InvalidArgument);
         }
 
         const ResourceId id = NextId();

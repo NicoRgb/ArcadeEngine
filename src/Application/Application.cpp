@@ -1,6 +1,6 @@
 #include "Application/Application.hpp"
 #include "Application/Logger.hpp"
-#include "Core/Resource.hpp"
+#include "Assets/AssetManager.hpp"
 #include "Core/Result.hpp"
 
 #include <memory>
@@ -11,6 +11,8 @@ Application* Application::s_Instance = nullptr;
 Application::Application() : m_EngineLogger(std::make_shared<StdoutLogSink>())
 {
     s_Instance = this;
+    auto assetManager = ResultOrThrow(m_ResourceManager.GetSingleton<AssetManager>());
+    // ResultOrThrow((assetManager->IndexAssets("assets")));
 }
 
 Application::~Application()

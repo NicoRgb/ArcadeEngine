@@ -74,7 +74,7 @@ if(ENABLE_COMPILER_CACHE)
 endif()
 
 # ------------------------------------------------------------------------------
-# Debug build: no optimization, no debug symbols
+# Debug build: no optimization, debug symbols
 #
 # GCC / Clang / AppleClang:
 # -O0
@@ -90,7 +90,7 @@ endif()
 if(MSVC)
     # Remove MSVC debug-info/runtime-check flags that CMake may put into
     # CMAKE_CXX_FLAGS_DEBUG.
-    string(REGEX REPLACE "/Z[iI7]" ""
+    string(REGEX REPLACE "/Zi" ""
         CMAKE_CXX_FLAGS_DEBUG
         "${CMAKE_CXX_FLAGS_DEBUG}"
     )
@@ -118,15 +118,14 @@ if(MSVC)
 else()
     # GCC / Clang / AppleClang.
     #
-    # -g0 cancels any -g supplied by the toolchain.
     # -O0 wins over the normal Debug -Og/-O0 setting.
     add_compile_options(
         "$<$<CONFIG:Debug>:-O0>"
-        "$<$<CONFIG:Debug>:-g0>"
+        "$<$<CONFIG:Debug>:-g>"
     )
 
     add_link_options(
-        "$<$<CONFIG:Debug>:-g0>"
+        "$<$<CONFIG:Debug>:-g>"
     )
 endif()
 
@@ -179,6 +178,22 @@ add_subdirectory(
     "${CMAKE_CURRENT_SOURCE_DIR}/extern/glm"
     "${CMAKE_BINARY_DIR}/extern/glm"
     EXCLUDE_FROM_ALL
+)
+
+# ------------------------------------------------------------------------------
+# nlohmann/json
+#
+# Header-only JSON library. Vendored under extern/json.
+# ------------------------------------------------------------------------------
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/json/single_include/nlohmann/json.hpp")
+    message(FATAL_ERROR "Missing extern/json")
+endif()
+
+add_library(nlohmann_json INTERFACE)
+
+target_include_directories(nlohmann_json
+    INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/extern/json/single_include"
 )
 
 # ------------------------------------------------------------------------------
@@ -492,6 +507,7 @@ target_link_libraries(${APP_NAME}
     glfw
     slang
     glm::glm
+    nlohmann_json
     vulkan_sdk_vma
     ${VOLK_TARGET}
 )

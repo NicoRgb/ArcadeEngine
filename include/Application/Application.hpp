@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Application/Logger.hpp"
+#include "Core/Resource.hpp"
 
 class Application
 {
@@ -14,13 +15,16 @@ public:
     Application& operator=(Application&&) = delete;
 
     static Application& Get() { return *s_Instance; }
+
     Logger& GetEngineLogger() { return m_EngineLogger; }
+    ResourceManager& GetResourceManager() { return m_ResourceManager; }
 
     void Run();
 
 private:
     static Application* s_Instance;
 
+    ResourceManager m_ResourceManager;
     Logger m_EngineLogger;
 };
 
