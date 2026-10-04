@@ -104,6 +104,9 @@ desktop.ini
 venv/
 env/
 
+# Dear ImGui editor state
+imgui.ini
+
 # ------------------------------------------------------------------------------
 
 # Tracy captures

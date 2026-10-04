@@ -7,7 +7,7 @@ Checks: >
   -readability-magic-numbers,
   -modernize-use-trailing-return-type
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(src|include)/'
+HeaderFilterRegex: '.*[/\\]projects[/\\]'
 
 CheckOptions:
   - key:   readability-identifier-length.MinimumVariableNameLength

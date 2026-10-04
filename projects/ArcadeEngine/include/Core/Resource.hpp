@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
@@ -129,7 +130,13 @@ private:
     friend class ResourceManager;
 
     template <typename>
+    friend class Resource;
+
+    template <typename>
     friend class WeakResource;
+
+    template <typename>
+    friend class BorrowedResource;
 };
 
 template <typename T>
@@ -204,15 +211,16 @@ public:
     }
 
     [[nodiscard]]
-    T* Get() const noexcept
+    std::optional<Resource<T>> Lock() const noexcept
     {
         auto owner = m_Pointer.lock();
-        return owner.get();
+        if (!owner)
+        {
+            return std::nullopt;
+        }
+
+        return Resource<T>(m_Id, std::move(owner));
     }
-
-    T* operator->() const noexcept { return Get(); }
-
-    T& operator*() const noexcept { return *Get(); }
 
 private:
     BorrowedResource(ResourceId rid, const std::shared_ptr<T>& pointer) noexcept

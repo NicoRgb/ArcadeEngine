@@ -1,0 +1,3 @@
+add_executable(ArcadeRuntime src/Main.cpp)
+target_link_libraries(ArcadeRuntime PRIVATE ArcadeEngine)
+arcade_configure_target(ArcadeRuntime)

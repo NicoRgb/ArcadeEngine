@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdlib>
+#include <cstdint>
+#include <type_traits>
+#include <utility>
 #include <expected>
-#include <print>
+#include <cstdio>
 
 enum class Error : uint8_t
 {
@@ -19,7 +22,7 @@ auto MakeError(T&& err)
     return std::unexpected<std::decay_t<T>>(std::forward<T>(err));
 }
 
-static const char* ErrorString(Error error)
+inline const char* ErrorString(Error error)
 {
     switch (error)
     {
@@ -37,7 +40,16 @@ T ResultOrThrow(Result<T> res)
 {
     if (!res)
     {
-        std::println("ResultOrThrow called on Error-Result {}", ErrorString(res.error()));
-        exit(EXIT_FAILURE);
+        std::fprintf(stderr, "ResultOrThrow called on Error-Result %s\n", ErrorString(res.error()));
+        std::exit(EXIT_FAILURE);
+    }
+
+    if constexpr (std::is_void_v<T>)
+    {
+        return;
+    }
+    else
+    {
+        return std::move(res).value();
     }
 }

@@ -2,15 +2,24 @@
 
 #include <filesystem>
 #include <functional>
+#include <cstdint>
+#include <cstddef>
+#include <limits>
 #include <random>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
+#include "Application/Application.hpp"
 #include "Core/Resource.hpp"
 #include "Core/Result.hpp"
+#include "Core/Export.hpp"
 
-using namespace nlohmann;
+using json = nlohmann::json;
 
 struct AssetId
 {
@@ -59,16 +68,16 @@ public:
     {
     }
 
-    virtual ~Asset() = default;
+    ARCADE_ENGINE_API virtual ~Asset();
     virtual void Load() = 0;
 
-    [[__nodiscard__]]
+    [[nodiscard]]
     const std::filesystem::path& GetPath() const
     {
         return m_Path;
     }
 
-    [[__nodiscard__]]
+    [[nodiscard]]
     const json& GetMetadata() const
     {
         return m_Metadata;
@@ -82,17 +91,21 @@ protected:
 class AssetRegisteree
 {
 public:
-    AssetRegisteree(
-        const std::function<Resource<Asset>(std::filesystem::path path, json metadata)>& createFunc,
+    ARCADE_ENGINE_API AssetRegisteree(
+        const std::function<Result<Resource<Asset>>(
+            const std::filesystem::path& path,
+            std::string_view assetKey,
+            json metadata)>& createFunc,
         const std::vector<const char*>& extensions);
 };
 
 #define REGISTER_ASSET_TYPE(className, ...)                                                        \
-    AssetRegisteree g_Registeree{                                                                  \
-        [](std::filesystem::path path, json metadata) -> Resource<Asset>                           \
+    static AssetRegisteree g_Registeree{                                                           \
+        [](const std::filesystem::path& path, std::string_view assetKey, json metadata)             \
+            -> Result<Resource<Asset>>                                                             \
         {                                                                                          \
-            return ResultOrThrow(Application::Get().GetResourceManager().CreateShared<className>(  \
-                path.filename().string(), path, metadata));                                        \
+            return Application::Get().GetResourceManager().CreateShared<className>(                \
+                assetKey, path, std::move(metadata));                                               \
         },                                                                                         \
         {__VA_ARGS__}};
 
@@ -102,10 +115,12 @@ public:
     AssetManager() = default;
     ~AssetManager() = default;
 
-    Result<void> IndexAssets(const std::filesystem::path& directory);
+    ARCADE_ENGINE_API Result<void> IndexAssets(const std::filesystem::path& directory);
+    [[nodiscard]] ARCADE_ENGINE_API Result<Resource<Asset>> FindAsset(std::string_view relativePath) const;
+    [[nodiscard]] size_t IndexedAssetCount() const noexcept { return m_Assets.size(); }
 
 private:
-    Result<void> IndexAsset(const std::filesystem::path& path);
+    Result<void> IndexAsset(const std::filesystem::path& path, std::string_view assetKey);
 
     std::unordered_map<AssetId, Resource<Asset>, AssetIdHash> m_Assets;
     std::unordered_map<AssetKey, AssetId, AssetKeyHash> m_ByKey;

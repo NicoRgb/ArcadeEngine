@@ -14,8 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 SOURCE_DIRS = (
-    ROOT / "src",
-    ROOT / "include",
+    ROOT / "projects",
 )
 
 SOURCE_EXTENSIONS = {
@@ -57,24 +56,6 @@ def require_program(name: str) -> str:
     return path
 
 
-def require_vulkan_sdk() -> None:
-    vulkan_sdk = os.environ.get("VULKAN_SDK")
-
-    if not vulkan_sdk:
-        raise RuntimeError(
-            "VULKAN_SDK is not set.\n"
-            "Install the Vulkan SDK and source/setup its environment."
-        )
-
-    sdk_path = Path(vulkan_sdk)
-
-    if not sdk_path.is_dir():
-        raise RuntimeError(
-            f"VULKAN_SDK points to a directory that does not exist:\n"
-            f"  {sdk_path}"
-        )
-
-
 def run(
     command: list[str],
     *,
@@ -110,7 +91,7 @@ def format_files(check: bool) -> None:
     files = source_files()
 
     if not files:
-        print("No C/C++ files found under src/ or include/.")
+        print("No C/C++ files found under projects/.")
         return
 
     # Keep command lines reasonably sized, especially on Windows.
@@ -168,10 +149,9 @@ def build(preset: str) -> None:
 
 def lint() -> None:
     require_program("clang-tidy")
-    require_vulkan_sdk()
 
-    # The clang-tidy preset enables CXX_CLANG_TIDY only on the application's
-    # target, so third-party submodules are not linted.
+    # Project targets opt into CXX_CLANG_TIDY. Vendored ImGui and dependency
+    # submodules are intentionally excluded.
     build("clang-tidy")
 
     print()
@@ -179,8 +159,7 @@ def lint() -> None:
 
 
 def sanitizer(preset: str) -> None:
-    require_vulkan_sdk()
-    build(preset)
+    test(preset)
 
 
 def test(preset: str) -> None:
@@ -228,8 +207,9 @@ def preset_to_configuration(preset: str) -> str:
 def check_submodules() -> None:
     required_paths = (
         ROOT / "extern" / "glfw" / "CMakeLists.txt",
-        ROOT / "extern" / "slang" / "CMakeLists.txt",
-        ROOT / "extern" / "tracy" / "CMakeLists.txt",
+        ROOT / "extern" / "glm" / "CMakeLists.txt",
+        ROOT / "extern" / "json" / "single_include" / "nlohmann" / "json.hpp",
+        ROOT / "extern" / "nvrhi" / "CMakeLists.txt",
     )
 
     missing = [
@@ -324,16 +304,19 @@ def setup_msvc_environment() -> dict[str, str] | None:
             f"  {vsdevcmd}"
         )
 
-    command = (
-        f'call "{vsdevcmd}" -arch=x64 -host_arch=x64 >nul && set'
-    )
-
-    result = subprocess.run(
-        ["cmd.exe", "/d", "/s", "/c", command],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    # Use cmd's shell mode here: passing this through a quoted `/s /c`
+    # argument list can change how cmd parses the quoted VsDevCmd path.
+    command = f'call "{vsdevcmd}" -arch=x64 -host_arch=x64 && set'
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        diagnostic = "\n".join(
+            (result.stdout + "\n" + result.stderr).splitlines()[-30:]
+        ).strip()
+        raise RuntimeError(
+            "Visual Studio developer environment setup failed."
+            + (f"\n{diagnostic}" if diagnostic else "")
+            + "\nOpen a Visual Studio Developer Command Prompt and rerun setup."
+        )
 
     env = os.environ.copy()
 
@@ -447,7 +430,8 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        check_submodules()
+        if args.command != "format":
+            check_submodules()
 
         # Ninja Multi-Config + MSVC needs the VS developer environment when
         # cl.exe isn't already present.
@@ -460,22 +444,18 @@ def main() -> int:
             format_files(check=not args.fix)
 
         elif args.command == "build":
-            require_vulkan_sdk()
             build(args.preset)
 
         elif args.command == "lint":
             lint()
 
         elif args.command == "asan":
-            require_vulkan_sdk()
             sanitizer("asan")
 
         elif args.command == "ubsan":
-            require_vulkan_sdk()
             sanitizer("ubsan")
 
         elif args.command == "test":
-            require_vulkan_sdk()
             test(args.preset)
 
         elif args.command == "all":

@@ -1,8 +1,14 @@
 #pragma once
 
+#include <cstdint>
 #include <format>
+#include <memory>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
+
+#include "Core/Export.hpp"
 
 enum class LogLevel : uint8_t
 {
@@ -12,7 +18,7 @@ enum class LogLevel : uint8_t
     Error
 };
 
-class LogSink
+class ARCADE_ENGINE_API LogSink
 {
 public:
     virtual ~LogSink() = default;
@@ -23,7 +29,13 @@ public:
 class Logger
 {
 public:
-    explicit Logger(const std::shared_ptr<LogSink>& logSink) : m_Sink(logSink) {}
+    explicit Logger(const std::shared_ptr<LogSink>& logSink) : m_Sink(logSink)
+    {
+        if (!m_Sink)
+        {
+            throw std::invalid_argument("Logger requires a log sink.");
+        }
+    }
     ~Logger() = default;
 
     template <class... Args> void LogDebug(std::format_string<Args...> fmt, Args&&... args)
@@ -60,10 +72,10 @@ private:
 class StdoutLogSink : public LogSink
 {
 public:
-    StdoutLogSink();
+    ARCADE_ENGINE_API StdoutLogSink();
     ~StdoutLogSink() = default;
 
-    void ReceiveMessage(LogLevel level, std::string_view msg) override;
+    ARCADE_ENGINE_API void ReceiveMessage(LogLevel level, std::string_view msg) override;
 
 private:
     static constexpr std::string_view RESET = "\033[0m";

@@ -1,14 +1,10 @@
 name: CI
 
-"on":
+on:
   push:
-    branches:
-      - main
-
+    branches: [main]
   pull_request:
-    branches:
-      - main
-
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -19,178 +15,108 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VULKAN_SDK_VERSION: "1.4.363.0"
   PYTHON_VERSION: "3.13"
-
+  VULKAN_SDK_VERSION: "1.4.363.0"
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Formatting
-  # ---------------------------------------------------------------------------
-
   format:
     name: clang-format
     runs-on: ubuntu-24.04
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           submodules: recursive
-
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install clang-format
         run: |
           sudo apt-get update
           sudo apt-get install --yes clang-format
-
       - name: Check formatting
         run: python scripts/ci.py format
 
-
-  # ---------------------------------------------------------------------------
-  # Cross-platform builds
-  # ---------------------------------------------------------------------------
-
   build:
-    name: ${{ matrix.name }} / ${{ matrix.preset }}
+    name: ${{ matrix.os }} / ${{ matrix.preset }}
     runs-on: ${{ matrix.os }}
-
     strategy:
       fail-fast: false
-
       matrix:
-        include:
-          - name: Linux
-            os: ubuntu-24.04
-            preset: debug
-            cmd: |
-              sudo apt-get update
-              sudo apt-get install --yes wayland-protocols libwayland-dev
-
-          - name: Linux
-            os: ubuntu-24.04
-            preset: release
-            cmd: |
-              sudo apt-get update
-              sudo apt-get install --yes wayland-protocols libwayland-dev xorg-dev libxkbcommon-dev
-              
-          - name: macOS
-            os: macos-15
-            preset: debug
-            cmd:
-
-          - name: macOS
-            os: macos-15
-            preset: release
-            cmd:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+        preset: [debug, release]
 
     steps:
-      - name: Install dependencies
-        if: ${{ matrix.cmd }}
-        run: ${{ matrix.cmd }}
-
       - name: Checkout
         uses: actions/checkout@v7
         with:
           submodules: recursive
-
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Vulkan SDK
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            clang-format clang-tidy \
+            libvulkan-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev xorg-dev
+      - name: Install Vulkan SDK with MoltenVK
+        if: runner.os == 'macOS'
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
-          optional_components: com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
           cache: true
           stripdown: false
-
-      - name: Build
-        run: python scripts/ci.py build --preset ${{ matrix.preset }}
-
-
-  # ---------------------------------------------------------------------------
-  # Static analysis
-  # ---------------------------------------------------------------------------
+      - name: Build and run headless engine tests
+        run: python scripts/ci.py test --preset ${{ matrix.preset }}
 
   clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04
-
     steps:
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes wayland-protocols libwayland-dev
-
       - name: Checkout
         uses: actions/checkout@v7
         with:
           submodules: recursive
-
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install clang-tidy
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang-tidy
-
-      - name: Install Vulkan SDK
-        uses: jakoch/install-vulkan-sdk-action@v1
-        with:
-          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
-          optional_components: com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
-          cache: true
-          stripdown: false
-
+          sudo apt-get install --yes clang-tidy libvulkan-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev xorg-dev
       - name: Run clang-tidy
         run: python scripts/ci.py lint
 
-
-  # ---------------------------------------------------------------------------
-  # AddressSanitizer + UndefinedBehaviorSanitizer
-  # ---------------------------------------------------------------------------
-
   sanitizers:
-    name: sanitizers
+    name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04
-
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [asan, ubsan]
     steps:
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes wayland-protocols libwayland-dev
-
       - name: Checkout
         uses: actions/checkout@v7
         with:
           submodules: recursive
-
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Vulkan SDK
-        uses: jakoch/install-vulkan-sdk-action@v1
-        with:
-          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
-          optional_components: com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
-          cache: true
-          stripdown: false
-
-      - name: AddressSanitizer
-        run: python scripts/ci.py asan
-
-      - name: UndefinedBehaviorSanitizer
-        run: python scripts/ci.py ubsan
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libvulkan-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev xorg-dev
+      - name: Build and run tests with sanitizers
+        run: python scripts/ci.py test --preset ${{ matrix.preset }}
