@@ -5,6 +5,12 @@
 
 #include "Core/Export.hpp"
 
+enum class WindowClientApi : uint8_t
+{
+    None,
+    OpenGL
+};
+
 struct WindowSpec
 {
     std::string_view Title = "Arcade";
@@ -15,6 +21,7 @@ struct WindowSpec
     bool Resizable = true;
     bool Maximized = false;
     bool FocusOnShow = true;
+    WindowClientApi ClientApi = WindowClientApi::None;
 };
 
 class ARCADE_ENGINE_API WindowSubsystem
@@ -35,6 +42,7 @@ public:
 
     [[nodiscard]] bool ShouldClose() const noexcept;
     void RequestClose() noexcept;
+    void CancelCloseRequest() noexcept;
     [[nodiscard]] void* NativeHandle() const noexcept { return m_NativeWindow; }
 
 private:

@@ -12,16 +12,16 @@
 #include <vector>
 
 #if defined(_WIN32)
-#    include <nvrhi/d3d12.h>
-#    include <directx/d3d12.h>
-#    include <dxgi1_6.h>
-#    include <wrl/client.h>
+#include <directx/d3d12.h>
+#include <dxgi1_6.h>
+#include <nvrhi/d3d12.h>
+#include <wrl/client.h>
 #else
-#    include <GLFW/glfw3.h>
-#    include <nvrhi/vulkan.h>
-#    include <vulkan/vulkan.h>
-#    define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#    include <vulkan/vulkan.hpp>
+#include <GLFW/glfw3.h>
+#include <nvrhi/vulkan.h>
+#include <vulkan/vulkan.h>
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+#include <vulkan/vulkan.hpp>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #endif
@@ -63,8 +63,8 @@ struct GraphicsDevice::Impl
             DXGI_ADAPTER_DESC1 description{};
             if (SUCCEEDED(Adapter->GetDesc1(&description)) &&
                 (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 &&
-                SUCCEEDED(D3D12CreateDevice(
-                    Adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&NativeDevice))))
+                SUCCEEDED(D3D12CreateDevice(Adapter.Get(), D3D_FEATURE_LEVEL_11_0,
+                                            IID_PPV_ARGS(&NativeDevice))))
             {
                 break;
             }
@@ -77,8 +77,8 @@ struct GraphicsDevice::Impl
         {
             if (SUCCEEDED(Factory->EnumWarpAdapter(IID_PPV_ARGS(&Adapter))))
             {
-                result = D3D12CreateDevice(
-                    Adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&NativeDevice));
+                result = D3D12CreateDevice(Adapter.Get(), D3D_FEATURE_LEVEL_11_0,
+                                           IID_PPV_ARGS(&NativeDevice));
             }
             if (!NativeDevice)
             {
@@ -88,8 +88,7 @@ struct GraphicsDevice::Impl
 
         D3D12_COMMAND_QUEUE_DESC queueDescription{};
         queueDescription.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        result = NativeDevice->CreateCommandQueue(
-            &queueDescription, IID_PPV_ARGS(&GraphicsQueue));
+        result = NativeDevice->CreateCommandQueue(&queueDescription, IID_PPV_ARGS(&GraphicsQueue));
         if (FAILED(result))
         {
             throw std::runtime_error("Failed to create the D3D12 graphics queue.");
@@ -117,8 +116,8 @@ struct GraphicsDevice::Impl
     {
         if (result != VK_SUCCESS)
         {
-            throw std::runtime_error(
-                std::string(operation) + " failed with VkResult " + std::to_string(result));
+            throw std::runtime_error(std::string(operation) + " failed with VkResult " +
+                                     std::to_string(result));
         }
     }
 
@@ -133,7 +132,8 @@ struct GraphicsDevice::Impl
             }
 
             uint32_t instanceExtensionCount = 0;
-            const char** requiredExtensions = glfwGetRequiredInstanceExtensions(&instanceExtensionCount);
+            const char** requiredExtensions =
+                glfwGetRequiredInstanceExtensions(&instanceExtensionCount);
             if (requiredExtensions == nullptr || instanceExtensionCount == 0)
             {
                 throw std::runtime_error("GLFW could not provide Vulkan surface extensions.");
@@ -163,22 +163,23 @@ struct GraphicsDevice::Impl
             }
 
             std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
-            Check(vkEnumeratePhysicalDevices(Instance, &physicalDeviceCount, physicalDevices.data()),
-                  "vkEnumeratePhysicalDevices");
+            Check(
+                vkEnumeratePhysicalDevices(Instance, &physicalDeviceCount, physicalDevices.data()),
+                "vkEnumeratePhysicalDevices");
 
             for (const VkPhysicalDevice candidate : physicalDevices)
             {
                 uint32_t queueFamilyCount = 0;
                 vkGetPhysicalDeviceQueueFamilyProperties(candidate, &queueFamilyCount, nullptr);
                 std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-                vkGetPhysicalDeviceQueueFamilyProperties(
-                    candidate, &queueFamilyCount, queueFamilies.data());
+                vkGetPhysicalDeviceQueueFamilyProperties(candidate, &queueFamilyCount,
+                                                         queueFamilies.data());
 
                 for (uint32_t family = 0; family < queueFamilyCount; ++family)
                 {
                     VkBool32 supportsPresent = VK_FALSE;
-                    Check(vkGetPhysicalDeviceSurfaceSupportKHR(
-                              candidate, family, Surface, &supportsPresent),
+                    Check(vkGetPhysicalDeviceSurfaceSupportKHR(candidate, family, Surface,
+                                                               &supportsPresent),
                           "vkGetPhysicalDeviceSurfaceSupportKHR");
 
                     if ((queueFamilies[family].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0 &&
@@ -202,20 +203,24 @@ struct GraphicsDevice::Impl
             }
 
             uint32_t deviceExtensionCount = 0;
-            Check(vkEnumerateDeviceExtensionProperties(
-                      PhysicalDevice, nullptr, &deviceExtensionCount, nullptr),
+            Check(vkEnumerateDeviceExtensionProperties(PhysicalDevice, nullptr,
+                                                       &deviceExtensionCount, nullptr),
                   "vkEnumerateDeviceExtensionProperties");
             std::vector<VkExtensionProperties> availableExtensions(deviceExtensionCount);
             Check(vkEnumerateDeviceExtensionProperties(
                       PhysicalDevice, nullptr, &deviceExtensionCount, availableExtensions.data()),
                   "vkEnumerateDeviceExtensionProperties");
-            const bool supportsSwapchain = std::any_of(
-                availableExtensions.begin(), availableExtensions.end(), [](const auto& extension) {
-                    return std::string_view(extension.extensionName) == VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-                });
+            const bool supportsSwapchain =
+                std::any_of(availableExtensions.begin(), availableExtensions.end(),
+                            [](const auto& extension)
+                            {
+                                return std::string_view(extension.extensionName) ==
+                                       VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+                            });
             if (!supportsSwapchain)
             {
-                throw std::runtime_error("The Vulkan device does not support swapchain presentation.");
+                throw std::runtime_error(
+                    "The Vulkan device does not support swapchain presentation.");
             }
 
             VkPhysicalDeviceVulkan12Features supportedFeatures{
@@ -246,7 +251,8 @@ struct GraphicsDevice::Impl
             deviceInfo.pQueueCreateInfos = &queueInfo;
             deviceInfo.enabledExtensionCount = 1;
             deviceInfo.ppEnabledExtensionNames = enabledDeviceExtensions;
-            Check(vkCreateDevice(PhysicalDevice, &deviceInfo, nullptr, &NativeDevice), "vkCreateDevice");
+            Check(vkCreateDevice(PhysicalDevice, &deviceInfo, nullptr, &NativeDevice),
+                  "vkCreateDevice");
             vkGetDeviceQueue(NativeDevice, GraphicsQueueFamily, 0, &GraphicsQueue);
             VULKAN_HPP_DEFAULT_DISPATCHER.init(Instance, vkGetInstanceProcAddr, NativeDevice);
 

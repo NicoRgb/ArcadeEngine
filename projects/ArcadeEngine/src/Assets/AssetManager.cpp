@@ -9,19 +9,19 @@ class AssetRegistry
 public:
     struct AssetDesc
     {
-        std::function<Result<Resource<Asset>>(
-            const std::filesystem::path&, std::string_view, json)> CreateFunc;
+        std::string Name;
+        std::function<Result<Resource<Asset>>(const std::filesystem::path&, std::string_view, json)>
+            CreateFunc;
         std::vector<std::string> Extensions;
     };
 
-    void Register(
-        const std::function<Result<Resource<Asset>>(
-            const std::filesystem::path& path,
-            std::string_view assetKey,
-            json metadata)>& createFunc,
-        const std::vector<const char*>& extensions)
+    void Register(const char* name,
+                  const std::function<Result<Resource<Asset>>(const std::filesystem::path& path,
+                                                              std::string_view assetKey,
+                                                              json metadata)>& createFunc,
+                  const std::vector<const char*>& extensions)
     {
-        AssetDesc desc{.CreateFunc = createFunc};
+        AssetDesc desc{.Name = std::string(name), .CreateFunc = createFunc, .Extensions = {}};
         desc.Extensions.reserve(extensions.size());
         for (const auto* extension : extensions)
         {
@@ -47,13 +47,12 @@ AssetRegistry& GetAssetRegistry()
 }
 
 AssetRegisteree::AssetRegisteree(
+    const char* name,
     const std::function<Result<Resource<Asset>>(
-        const std::filesystem::path& path,
-        std::string_view assetKey,
-        json metadata)>& createFunc,
+        const std::filesystem::path& path, std::string_view assetKey, json metadata)>& createFunc,
     const std::vector<const char*>& extensions)
 {
-    GetAssetRegistry().Register(createFunc, extensions);
+    GetAssetRegistry().Register(name, createFunc, extensions);
 }
 
 Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
@@ -86,7 +85,7 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
                 return MakeError(Error::InvalidArgument);
             }
 
-            auto res = IndexAsset(dirEntry.path(), relativePath.generic_string());
+            auto res = IndexAsset(dirEntry.path(), relativePath.filename().generic_string());
             if (!res)
             {
                 return MakeError(res.error());
@@ -163,9 +162,9 @@ Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::st
     return {};
 }
 
-Result<Resource<Asset>> AssetManager::FindAsset(std::string_view relativePath) const
+Result<Resource<Asset>> AssetManager::FindAsset(std::string_view name) const
 {
-    const auto it = m_ByKey.find(AssetKey{.Name = std::string(relativePath)});
+    const auto it = m_ByKey.find(AssetKey{.Name = std::string(name)});
     if (it == m_ByKey.end())
     {
         return MakeError(Error::NotFound);

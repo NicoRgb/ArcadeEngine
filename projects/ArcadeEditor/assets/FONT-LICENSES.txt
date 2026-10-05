@@ -1,0 +1,10 @@
+Roboto-Medium.ttf
+Copyright Christian Robertson. Licensed under the Apache License, Version 2.0.
+https://fonts.google.com/specimen/Roboto
+
+Cousine-Regular.ttf
+Copyright 2010 Google Corporation. Licensed under the SIL Open Font License, Version 1.1.
+https://fonts.google.com/specimen/Cousine
+
+The fonts are bundled from Dear ImGui's misc/fonts directory. The respective
+license texts are available from the upstream font projects linked above.

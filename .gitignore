@@ -106,6 +106,8 @@ env/
 
 # Dear ImGui editor state
 imgui.ini
+ArcadeEditor.ini
+.arcade/
 
 # ------------------------------------------------------------------------------
 

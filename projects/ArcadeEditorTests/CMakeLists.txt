@@ -1,0 +1,4 @@
+add_executable(ArcadeEditorTests src/EditorTests.cpp)
+target_link_libraries(ArcadeEditorTests PRIVATE ArcadeEditorCore Catch2::Catch2WithMain)
+arcade_configure_target(ArcadeEditorTests)
+add_test(NAME ArcadeEditorTests COMMAND ArcadeEditorTests)

@@ -73,7 +73,7 @@ function(arcade_configure_target target)
     endif()
 
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc /Zc:preprocessor)
+        target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc /Zc:preprocessor /FS /MP1)
         if(ENABLE_ASAN)
             target_compile_options(${target} PRIVATE /fsanitize=address)
         endif()
@@ -153,6 +153,8 @@ add_subdirectory(projects/ArcadeRuntime)
 
 if(ARCADE_BUILD_EDITOR)
     arcade_require_submodule(extern/imgui imgui.cpp)
+    arcade_require_submodule(extern/watcher include/wtr/watcher.hpp)
+    find_package(OpenGL REQUIRED)
     add_subdirectory(projects/ArcadeEditor)
 
     if(ARCADE_ENABLE_TRACY)
@@ -176,6 +178,9 @@ if(BUILD_TESTING)
     add_subdirectory(extern/catch2 EXCLUDE_FROM_ALL)
 
     add_subdirectory(projects/ArcadeEngineTests)
+    if(ARCADE_BUILD_EDITOR)
+        add_subdirectory(projects/ArcadeEditorTests)
+    endif()
 endif()
 
 message(STATUS "ArcadeEngine shared library: enabled")

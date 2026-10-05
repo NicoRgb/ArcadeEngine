@@ -1,12 +1,15 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <format>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "Core/Export.hpp"
 
@@ -29,31 +32,57 @@ public:
 class Logger
 {
 public:
-    explicit Logger(const std::shared_ptr<LogSink>& logSink) : m_Sink(logSink)
+    explicit Logger(const std::shared_ptr<LogSink>& logSink, std::string prefix = {})
+        : m_Prefix(std::move(prefix))
     {
-        if (!m_Sink)
+        if (!logSink)
         {
             throw std::invalid_argument("Logger requires a log sink.");
         }
+        m_Sinks.push_back(logSink);
     }
+    explicit Logger(std::string prefix = {}) : m_Prefix(std::move(prefix)) {}
     ~Logger() = default;
 
-    template <class... Args> void LogDebug(std::format_string<Args...> fmt, Args&&... args)
+    void AddSink(const std::shared_ptr<LogSink>& sink)
+    {
+        if (!sink)
+        {
+            throw std::invalid_argument("Logger cannot add an empty sink.");
+        }
+        std::scoped_lock lock(m_Mutex);
+        if (std::ranges::find(m_Sinks, sink) == m_Sinks.end())
+        {
+            m_Sinks.push_back(sink);
+        }
+    }
+
+    void RemoveSink(const std::shared_ptr<LogSink>& sink)
+    {
+        std::scoped_lock lock(m_Mutex);
+        std::erase(m_Sinks, sink);
+    }
+
+    template <class... Args>
+    void LogDebug(std::format_string<Args...> fmt, Args&&... args)
     {
         LogMessage(LogLevel::Debug, fmt, std::forward<Args>(args)...);
     }
 
-    template <class... Args> void LogInfo(std::format_string<Args...> fmt, Args&&... args)
+    template <class... Args>
+    void LogInfo(std::format_string<Args...> fmt, Args&&... args)
     {
         LogMessage(LogLevel::Info, fmt, std::forward<Args>(args)...);
     }
 
-    template <class... Args> void LogWarn(std::format_string<Args...> fmt, Args&&... args)
+    template <class... Args>
+    void LogWarn(std::format_string<Args...> fmt, Args&&... args)
     {
         LogMessage(LogLevel::Warn, fmt, std::forward<Args>(args)...);
     }
 
-    template <class... Args> void LogError(std::format_string<Args...> fmt, Args&&... args)
+    template <class... Args>
+    void LogError(std::format_string<Args...> fmt, Args&&... args)
     {
         LogMessage(LogLevel::Error, fmt, std::forward<Args>(args)...);
     }
@@ -63,10 +92,24 @@ private:
     void LogMessage(LogLevel level, std::format_string<Args...> fmt, Args&&... args)
     {
         std::string msg = std::format(fmt, std::forward<Args>(args)...);
-        m_Sink->ReceiveMessage(level, msg);
+        if (!m_Prefix.empty())
+        {
+            msg = std::format("[{}] {}", m_Prefix, msg);
+        }
+        std::vector<std::shared_ptr<LogSink>> sinks;
+        {
+            std::scoped_lock lock(m_Mutex);
+            sinks = m_Sinks;
+        }
+        for (const auto& sink : sinks)
+        {
+            sink->ReceiveMessage(level, msg);
+        }
     }
 
-    std::shared_ptr<LogSink> m_Sink;
+    std::string m_Prefix;
+    mutable std::mutex m_Mutex;
+    std::vector<std::shared_ptr<LogSink>> m_Sinks;
 };
 
 class StdoutLogSink : public LogSink

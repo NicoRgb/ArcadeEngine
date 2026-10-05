@@ -17,7 +17,9 @@ public:
 };
 
 AssetRegisteree g_TestAssetRegistration(
-    [](const std::filesystem::path& path, std::string_view assetKey, json metadata) {
+    "TestAsset",
+    [](const std::filesystem::path& path, std::string_view assetKey, json metadata)
+    {
         auto result = Application::Get().GetResourceManager().CreateShared<TestAsset>(
             assetKey, path, std::move(metadata));
         if (!result)
@@ -35,9 +37,9 @@ public:
     {
         static std::atomic_uint64_t counter = 0;
         m_Path = std::filesystem::temp_directory_path() /
-                 ("arcade-engine-test-" + std::to_string(
-                     std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
-                  std::to_string(counter++));
+                 ("arcade-engine-test-" +
+                  std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                  "-" + std::to_string(counter++));
         std::filesystem::create_directories(m_Path);
     }
 

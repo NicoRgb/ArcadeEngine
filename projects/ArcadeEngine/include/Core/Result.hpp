@@ -1,25 +1,53 @@
 #pragma once
 
-#include <cstdlib>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <expected>
+#include <string>
+#include <system_error>
 #include <type_traits>
 #include <utility>
-#include <expected>
-#include <cstdio>
 
 enum class Error : uint8_t
 {
     InvalidArgument,
-    NotFound
+    NotFound,
+    AlreadyExists,
+    PermissionDenied,
+    IoFailure,
+    ParseFailure,
+    InvalidState,
+    Unsupported,
+    Cancelled,
+    Internal
+};
+
+struct ErrorInfo
+{
+    Error Code = Error::Internal;
+    std::string Message;
+    std::error_code SystemCode;
+
+    ErrorInfo() = default;
+    ErrorInfo(Error code, std::string message = {}, std::error_code systemCode = {})
+        : Code(code), Message(std::move(message)), SystemCode(systemCode)
+    {
+    }
 };
 
 template <typename T>
-using Result = std::expected<T, Error>;
+using Result = std::expected<T, ErrorInfo>;
 
-template <typename T>
-auto MakeError(T&& err)
+inline std::unexpected<ErrorInfo> MakeError(Error code, std::string message = {},
+                                            std::error_code systemCode = {})
 {
-    return std::unexpected<std::decay_t<T>>(std::forward<T>(err));
+    return std::unexpected<ErrorInfo>(ErrorInfo{code, std::move(message), systemCode});
+}
+
+inline std::unexpected<ErrorInfo> MakeError(ErrorInfo error)
+{
+    return std::unexpected<ErrorInfo>(std::move(error));
 }
 
 inline const char* ErrorString(Error error)
@@ -30,9 +58,46 @@ inline const char* ErrorString(Error error)
         return "InvalidArgument";
     case Error::NotFound:
         return "NotFound";
+    case Error::AlreadyExists:
+        return "AlreadyExists";
+    case Error::PermissionDenied:
+        return "PermissionDenied";
+    case Error::IoFailure:
+        return "IoFailure";
+    case Error::ParseFailure:
+        return "ParseFailure";
+    case Error::InvalidState:
+        return "InvalidState";
+    case Error::Unsupported:
+        return "Unsupported";
+    case Error::Cancelled:
+        return "Cancelled";
+    case Error::Internal:
+        return "Internal";
     }
-
     return "Unknown";
+}
+
+inline std::string ErrorMessage(const ErrorInfo& error)
+{
+    std::string message = ErrorString(error.Code);
+    if (!error.Message.empty())
+    {
+        message += ": ";
+        message += error.Message;
+    }
+    if (error.SystemCode)
+    {
+        message += " (";
+        message += error.SystemCode.message();
+        message += ")";
+    }
+    return message;
+}
+
+inline const char* ErrorString(const ErrorInfo& error)
+{
+    return ErrorString(error.Code);
 }
 
 template <typename T>
@@ -40,7 +105,8 @@ T ResultOrThrow(Result<T> res)
 {
     if (!res)
     {
-        std::fprintf(stderr, "ResultOrThrow called on Error-Result %s\n", ErrorString(res.error()));
+        const std::string message = ErrorMessage(res.error());
+        std::fprintf(stderr, "ResultOrThrow called on Error-Result %s\n", message.c_str());
         std::exit(EXIT_FAILURE);
     }
 

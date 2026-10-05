@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <mutex>
 
 #ifdef _WIN32
 #include <io.h>
@@ -34,6 +35,8 @@ StdoutLogSink::StdoutLogSink()
 
 void StdoutLogSink::ReceiveMessage(LogLevel level, std::string_view msg)
 {
+    static std::mutex outputMutex;
+    const std::scoped_lock lock(outputMutex);
     auto config = get_config(level);
 
     if (m_UseAnsi)

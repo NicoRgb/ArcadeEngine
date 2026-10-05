@@ -2,8 +2,8 @@
 
 #include <stdexcept>
 
-#include "Core/Export.hpp"
 #include "Application/Logger.hpp"
+#include "Core/Export.hpp"
 #include "Core/Resource.hpp"
 
 class Application
@@ -31,12 +31,10 @@ private:
 
 #if !defined(NDEBUG)
 #define LOG_DEBUG(...) Application::Get().GetEngineLogger().LogDebug(__VA_ARGS__)
+#else
+#define LOG_DEBUG(...) ((void)0)
+#endif
+
 #define LOG_INFO(...) Application::Get().GetEngineLogger().LogInfo(__VA_ARGS__)
 #define LOG_WARN(...) Application::Get().GetEngineLogger().LogWarn(__VA_ARGS__)
 #define LOG_ERROR(...) Application::Get().GetEngineLogger().LogError(__VA_ARGS__)
-#else
-#define LOG_DEBUG(...) ((void)0)
-#define LOG_INFO(...) ((void)0)
-#define LOG_WARN(...) ((void)0)
-#define LOG_ERROR(...) ((void)0)
-#endif

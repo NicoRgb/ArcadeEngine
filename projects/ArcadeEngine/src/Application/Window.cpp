@@ -2,9 +2,9 @@
 
 #include <GLFW/glfw3.h>
 
+#include <limits>
 #include <stdexcept>
 #include <string>
-#include <limits>
 
 namespace
 {
@@ -47,7 +47,20 @@ Window::Window(const WindowSpec& spec)
     ++s_WindowCount;
 
     glfwDefaultWindowHints();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    if (spec.ClientApi == WindowClientApi::OpenGL)
+    {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#if defined(__APPLE__)
+        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#endif
+    }
+    else
+    {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    }
     glfwWindowHint(GLFW_RESIZABLE, spec.Resizable ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_FOCUSED, spec.FocusOnShow ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_MAXIMIZED, spec.Maximized ? GLFW_TRUE : GLFW_FALSE);
@@ -55,7 +68,8 @@ Window::Window(const WindowSpec& spec)
     GLFWmonitor* monitor = spec.Fullscreen ? glfwGetPrimaryMonitor() : nullptr;
     const int width = static_cast<int>(spec.Width);
     const int height = static_cast<int>(spec.Height);
-    auto* window = glfwCreateWindow(width, height, std::string(spec.Title).c_str(), monitor, nullptr);
+    auto* window =
+        glfwCreateWindow(width, height, std::string(spec.Title).c_str(), monitor, nullptr);
     if (window == nullptr)
     {
         ReleaseGlfw();
@@ -86,5 +100,13 @@ void Window::RequestClose() noexcept
     if (m_NativeWindow != nullptr)
     {
         glfwSetWindowShouldClose(static_cast<GLFWwindow*>(m_NativeWindow), GLFW_TRUE);
+    }
+}
+
+void Window::CancelCloseRequest() noexcept
+{
+    if (m_NativeWindow != nullptr)
+    {
+        glfwSetWindowShouldClose(static_cast<GLFWwindow*>(m_NativeWindow), GLFW_FALSE);
     }
 }

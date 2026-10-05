@@ -19,6 +19,10 @@
 [submodule "extern/imgui"]
 	path = extern/imgui
 	url = https://github.com/ocornut/imgui.git
+	branch = docking
 [submodule "extern/catch2"]
 	path = extern/catch2
 	url = https://github.com/catchorg/Catch2.git
+[submodule "extern/watcher"]
+	path = extern/watcher
+	url = https://github.com/e-dant/watcher.git
