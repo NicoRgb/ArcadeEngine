@@ -15,12 +15,12 @@ Result<void> UndoRedoStack::Execute(std::unique_ptr<EditorCommand> command)
 {
     if (!command)
     {
-        return MakeError(Error::InvalidArgument, "Cannot execute an empty editor command.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument, "Cannot execute an empty editor command.");
     }
     auto result = command->Execute();
     if (!result)
     {
-        return MakeError(result.error());
+        return FORWARD_ERROR(result);
     }
     PushUndo(std::move(command));
     m_Redo.clear();
@@ -31,7 +31,7 @@ Result<void> UndoRedoStack::PushApplied(std::unique_ptr<EditorCommand> command)
 {
     if (!command)
     {
-        return MakeError(Error::InvalidArgument, "Cannot record an empty editor command.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument, "Cannot record an empty editor command.");
     }
     PushUndo(std::move(command));
     m_Redo.clear();
@@ -55,14 +55,14 @@ Result<void> UndoRedoStack::Undo()
 {
     if (m_Undo.empty())
     {
-        return MakeError(Error::InvalidState, "There is no command to undo.");
+        return MAKE_ERROR_MSG(Error::InvalidState, "There is no command to undo.");
     }
 
     auto& command = m_Undo.back();
     auto result = command->Undo();
     if (!result)
     {
-        return MakeError(result.error());
+        return FORWARD_ERROR(result);
     }
     m_Redo.push_back(std::move(command));
     m_Undo.pop_back();
@@ -73,14 +73,14 @@ Result<void> UndoRedoStack::Redo()
 {
     if (m_Redo.empty())
     {
-        return MakeError(Error::InvalidState, "There is no command to redo.");
+        return MAKE_ERROR_MSG(Error::InvalidState, "There is no command to redo.");
     }
 
     auto& command = m_Redo.back();
     auto result = command->Execute();
     if (!result)
     {
-        return MakeError(result.error());
+        return FORWARD_ERROR(result);
     }
     m_Undo.push_back(std::move(command));
     m_Redo.pop_back();
@@ -123,7 +123,7 @@ Result<void> TextEditCommand::Execute()
 {
     if (!m_Document)
     {
-        return MakeError(Error::InvalidArgument, "Text edit command has no document.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument, "Text edit command has no document.");
     }
     m_Document->SetText(m_After);
     return {};
@@ -133,7 +133,7 @@ Result<void> TextEditCommand::Undo()
 {
     if (!m_Document)
     {
-        return MakeError(Error::InvalidArgument, "Text edit command has no document.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument, "Text edit command has no document.");
     }
     m_Document->SetText(m_Before);
     return {};
@@ -150,24 +150,25 @@ Result<void> RenameFileCommand::Rename(const std::filesystem::path& from,
 {
     if (from.empty() || to.empty() || from == to)
     {
-        return MakeError(Error::InvalidArgument, "A file rename requires two different paths.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument,
+                              "A file rename requires two different paths.");
     }
     std::error_code error;
     const bool destinationExists = std::filesystem::exists(to, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to inspect rename destination: " + to.string(),
-                         error);
+        return MAKE_ERROR_EXT(Error::IoFailure,
+                              "Unable to inspect rename destination: " + to.string(), error);
     }
     if (destinationExists)
     {
-        return MakeError(Error::AlreadyExists,
-                         "Refusing to overwrite an existing file: " + to.string());
+        return MAKE_ERROR_MSG(Error::AlreadyExists,
+                              "Refusing to overwrite an existing file: " + to.string());
     }
     std::filesystem::rename(from, to, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to rename file: " + from.string(), error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to rename file: " + from.string(), error);
     }
     if (m_PathChanged)
     {
@@ -178,11 +179,11 @@ Result<void> RenameFileCommand::Rename(const std::filesystem::path& from,
             std::filesystem::rename(to, from, rollbackError);
             if (rollbackError)
             {
-                return MakeError(Error::IoFailure,
-                                 "Rename metadata update failed and file rollback also failed.",
-                                 rollbackError);
+                return MAKE_ERROR_EXT(
+                    Error::IoFailure,
+                    "Rename metadata update failed and file rollback also failed.", rollbackError);
             }
-            return MakeError(changed.error());
+            return FORWARD_ERROR(changed);
         }
     }
     return {};

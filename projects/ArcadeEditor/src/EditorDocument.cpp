@@ -27,8 +27,8 @@ Result<std::filesystem::path> NormalizeExistingPath(const std::filesystem::path&
     auto normalized = std::filesystem::weakly_canonical(path, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to resolve document path: " + path.string(),
-                         error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to resolve document path: " + path.string(),
+                              error);
     }
     return normalized;
 }
@@ -49,16 +49,16 @@ Result<void> ReplaceFile(const std::filesystem::path& temporary,
     {
         const auto error =
             std::error_code(static_cast<int>(GetLastError()), std::system_category());
-        return MakeError(Error::IoFailure,
-                         "Unable to atomically replace file: " + destination.string(), error);
+        return MAKE_ERROR_EXT(Error::IoFailure,
+                              "Unable to atomically replace file: " + destination.string(), error);
     }
 #else
     std::error_code error;
     std::filesystem::rename(temporary, destination, error);
     if (error)
     {
-        return MakeError(Error::IoFailure,
-                         "Unable to atomically replace file: " + destination.string(), error);
+        return MAKE_ERROR_EXT(Error::IoFailure,
+                              "Unable to atomically replace file: " + destination.string(), error);
     }
 #endif
     return {};
@@ -77,9 +77,9 @@ Result<void> EditorDocument::Save()
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
         if (!output)
         {
-            return MakeError(Error::PermissionDenied,
-                             "Unable to create temporary file for " + m_Path.string(),
-                             std::error_code(errno, std::generic_category()));
+            return MAKE_ERROR_EXT(Error::PermissionDenied,
+                                  "Unable to create temporary file for " + m_Path.string(),
+                                  std::error_code(errno, std::generic_category()));
         }
         output.write(m_Text.data(), static_cast<std::streamsize>(m_Text.size()));
         output.flush();
@@ -87,8 +87,8 @@ Result<void> EditorDocument::Save()
         {
             std::error_code ignored;
             std::filesystem::remove(temporary, ignored);
-            return MakeError(Error::IoFailure,
-                             "Unable to write temporary file for " + m_Path.string());
+            return MAKE_ERROR_MSG(Error::IoFailure,
+                                  "Unable to write temporary file for " + m_Path.string());
         }
     }
 
@@ -97,7 +97,7 @@ Result<void> EditorDocument::Save()
     {
         std::error_code ignored;
         std::filesystem::remove(temporary, ignored);
-        return MakeError(replaced.error());
+        return FORWARD_ERROR(replaced);
     }
     m_SavedText = m_Text;
     m_ExternalConflict = false;
@@ -110,28 +110,29 @@ Result<void> EditorDocument::ReloadFromDisk()
     if (!std::filesystem::is_regular_file(m_Path, error) || error)
     {
         m_ExternalConflict = true;
-        return MakeError(Error::NotFound, "Document was removed or replaced: " + m_Path.string(),
-                         error);
+        return MAKE_ERROR_EXT(Error::NotFound,
+                              "Document was removed or replaced: " + m_Path.string(), error);
     }
     const auto size = std::filesystem::file_size(m_Path, error);
     if (error || size > MaxDocumentBytes)
     {
         m_ExternalConflict = true;
-        return MakeError(error ? Error::IoFailure : Error::Unsupported,
-                         "Changed document cannot be reloaded: " + m_Path.string(), error);
+        return MAKE_ERROR_EXT(error ? Error::IoFailure : Error::Unsupported,
+                              "Changed document cannot be reloaded: " + m_Path.string(), error);
     }
     std::ifstream input(m_Path, std::ios::binary);
     if (!input)
     {
         m_ExternalConflict = true;
-        return MakeError(Error::PermissionDenied, "Unable to reload document: " + m_Path.string());
+        return MAKE_ERROR_MSG(Error::PermissionDenied,
+                              "Unable to reload document: " + m_Path.string());
     }
     std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (input.bad() || text.find('\0') != std::string::npos)
     {
         m_ExternalConflict = true;
-        return MakeError(Error::IoFailure,
-                         "Changed document is unreadable text: " + m_Path.string());
+        return MAKE_ERROR_MSG(Error::IoFailure,
+                              "Changed document is unreadable text: " + m_Path.string());
     }
     m_Text = text;
     m_SavedText = std::move(text);
@@ -144,7 +145,7 @@ Result<std::shared_ptr<EditorDocument>> EditorDocumentStore::Open(const std::fil
     auto normalizedResult = NormalizeExistingPath(path);
     if (!normalizedResult)
     {
-        return MakeError(normalizedResult.error());
+        return FORWARD_ERROR(normalizedResult);
     }
     const auto normalized = std::move(*normalizedResult);
     for (const auto& document : m_Documents)
@@ -166,35 +167,38 @@ Result<std::shared_ptr<EditorDocument>> EditorDocumentStore::Open(const std::fil
     std::error_code error;
     if (!std::filesystem::is_regular_file(normalized, error) || error)
     {
-        return MakeError(Error::InvalidArgument,
-                         "Path is not a readable regular file: " + path.string(), error);
+        return MAKE_ERROR_EXT(Error::InvalidArgument,
+                              "Path is not a readable regular file: " + path.string(), error);
     }
     const auto size = std::filesystem::file_size(normalized, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to inspect file: " + normalized.string(), error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to inspect file: " + normalized.string(),
+                              error);
     }
     if (size > MaxDocumentBytes)
     {
-        return MakeError(Error::Unsupported,
-                         "Text documents are limited to 32 MiB: " + normalized.string());
+        return MAKE_ERROR_MSG(Error::Unsupported,
+                              "Text documents are limited to 32 MiB: " + normalized.string());
     }
 
     std::ifstream input(normalized, std::ios::binary);
     if (!input)
     {
-        return MakeError(Error::PermissionDenied, "Unable to open file: " + normalized.string(),
-                         std::error_code(errno, std::generic_category()));
+        return MAKE_ERROR_EXT(Error::PermissionDenied,
+                              "Unable to open file: " + normalized.string(),
+                              std::error_code(errno, std::generic_category()));
     }
     std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (input.bad())
     {
-        return MakeError(Error::IoFailure, "Unable to read file: " + normalized.string());
+        return MAKE_ERROR_MSG(Error::IoFailure, "Unable to read file: " + normalized.string());
     }
     if (text.find('\0') != std::string::npos)
     {
-        return MakeError(Error::Unsupported,
-                         "Binary assets cannot be opened in a text editor: " + normalized.string());
+        return MAKE_ERROR_MSG(Error::Unsupported,
+                              "Binary assets cannot be opened in a text editor: " +
+                                  normalized.string());
     }
 
     auto document =
@@ -208,7 +212,7 @@ Result<void> EditorDocumentStore::Close(const std::shared_ptr<EditorDocument>& d
 {
     if (!document || std::ranges::find(m_Documents, document) == m_Documents.end())
     {
-        return MakeError(Error::NotFound, "Document is not open.");
+        return MAKE_ERROR_MSG(Error::NotFound, "Document is not open.");
     }
     std::erase(m_Documents, document);
     return {};
@@ -223,7 +227,7 @@ Result<void> EditorDocumentStore::SaveAll()
             auto result = document->Save();
             if (!result)
             {
-                return MakeError(result.error());
+                return FORWARD_ERROR(result);
             }
         }
     }
@@ -236,12 +240,12 @@ Result<void> EditorDocumentStore::ChangePath(const std::filesystem::path& from,
     auto oldResult = NormalizeExistingPath(from);
     if (!oldResult)
     {
-        return MakeError(oldResult.error());
+        return FORWARD_ERROR(oldResult);
     }
     auto newResult = NormalizeExistingPath(to);
     if (!newResult)
     {
-        return MakeError(newResult.error());
+        return FORWARD_ERROR(newResult);
     }
     const auto oldPath = std::move(*oldResult);
     const auto newPath = std::move(*newResult);
@@ -276,7 +280,7 @@ Result<void> EditorDocumentStore::ReloadExternalChange(const std::filesystem::pa
     auto normalized = NormalizeExistingPath(path);
     if (!normalized)
     {
-        return MakeError(normalized.error());
+        return FORWARD_ERROR(normalized);
     }
     const auto document = std::ranges::find_if(m_Documents, [&normalized](const auto& candidate)
                                                { return candidate->Path() == *normalized; });
@@ -287,8 +291,8 @@ Result<void> EditorDocumentStore::ReloadExternalChange(const std::filesystem::pa
     if ((*document)->IsDirty())
     {
         (*document)->m_ExternalConflict = true;
-        return MakeError(Error::InvalidState,
-                         "File changed on disk; your unsaved edits are preserved.");
+        return MAKE_ERROR_MSG(Error::InvalidState,
+                              "File changed on disk; your unsaved edits are preserved.");
     }
     return (*document)->ReloadFromDisk();
 }
@@ -305,7 +309,7 @@ Result<void> EditorDocumentStore::SaveRecovery(const std::filesystem::path& reco
         totalBytes += document->Text().size();
         if (totalBytes > MaxRecoveryBytes)
         {
-            return MakeError(Error::Unsupported, "Unsaved document recovery exceeds 128 MiB.");
+            return MAKE_ERROR_MSG(Error::Unsupported, "Unsaved document recovery exceeds 128 MiB.");
         }
         snapshots.push_back({{"path", document->Path().string()}, {"text", document->Text()}});
     }
@@ -313,20 +317,20 @@ Result<void> EditorDocumentStore::SaveRecovery(const std::filesystem::path& reco
     std::filesystem::create_directories(recoveryFile.parent_path(), error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to create recovery directory.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to create recovery directory.", error);
     }
     auto temporary = recoveryFile;
     temporary += ".tmp";
     {
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
         if (!output)
-            return MakeError(Error::PermissionDenied, "Unable to create recovery file.");
+            return MAKE_ERROR_MSG(Error::PermissionDenied, "Unable to create recovery file.");
         output << snapshots.dump();
         output.flush();
         if (!output)
         {
             std::filesystem::remove(temporary, error);
-            return MakeError(Error::IoFailure, "Unable to write recovery file.");
+            return MAKE_ERROR_MSG(Error::IoFailure, "Unable to write recovery file.");
         }
     }
 #if defined(_WIN32)
@@ -336,7 +340,7 @@ Result<void> EditorDocumentStore::SaveRecovery(const std::filesystem::path& reco
         const auto systemError =
             std::error_code(static_cast<int>(GetLastError()), std::system_category());
         std::filesystem::remove(temporary, error);
-        return MakeError(Error::IoFailure, "Unable to replace recovery file.", systemError);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to replace recovery file.", systemError);
     }
 #else
     std::filesystem::rename(temporary, recoveryFile, error);
@@ -345,7 +349,7 @@ Result<void> EditorDocumentStore::SaveRecovery(const std::filesystem::path& reco
         const auto replaceError = error;
         std::error_code ignored;
         std::filesystem::remove(temporary, ignored);
-        return MakeError(Error::IoFailure, "Unable to replace recovery file.", replaceError);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to replace recovery file.", replaceError);
     }
 #endif
     return {};
@@ -357,19 +361,19 @@ Result<std::size_t> EditorDocumentStore::RestoreRecovery(const std::filesystem::
     std::error_code error;
     if (!std::filesystem::exists(recoveryFile, error))
     {
-        return error ? Result<std::size_t>(
-                           MakeError(Error::IoFailure, "Unable to inspect recovery file.", error))
+        return error ? Result<std::size_t>(MAKE_ERROR_EXT(
+                           Error::IoFailure, "Unable to inspect recovery file.", error))
                      : Result<std::size_t>(std::size_t{0});
     }
     const auto size = std::filesystem::file_size(recoveryFile, error);
     if (error || size > MaxRecoveryBytes)
     {
-        return MakeError(error ? Error::IoFailure : Error::Unsupported,
-                         "Recovery file is unreadable or too large.", error);
+        return MAKE_ERROR_EXT(error ? Error::IoFailure : Error::Unsupported,
+                              "Recovery file is unreadable or too large.", error);
     }
     std::ifstream input(recoveryFile, std::ios::binary);
     if (!input)
-        return MakeError(Error::PermissionDenied, "Unable to read recovery file.");
+        return MAKE_ERROR_MSG(Error::PermissionDenied, "Unable to read recovery file.");
     json snapshots;
     try
     {
@@ -377,29 +381,29 @@ Result<std::size_t> EditorDocumentStore::RestoreRecovery(const std::filesystem::
     }
     catch (const json::exception& exception)
     {
-        return MakeError(Error::ParseFailure,
-                         "Recovery file is invalid: " + std::string(exception.what()));
+        return MAKE_ERROR_MSG(Error::ParseFailure,
+                              "Recovery file is invalid: " + std::string(exception.what()));
     }
     if (!snapshots.is_array())
-        return MakeError(Error::ParseFailure, "Recovery data must be an array.");
+        return MAKE_ERROR_MSG(Error::ParseFailure, "Recovery data must be an array.");
     std::size_t restored = 0;
     for (const auto& snapshot : snapshots)
     {
         if (!snapshot.is_object() || !snapshot.contains("path") || !snapshot["path"].is_string() ||
             !snapshot.contains("text") || !snapshot["text"].is_string())
         {
-            return MakeError(Error::ParseFailure, "Recovery entry is incomplete.");
+            return MAKE_ERROR_MSG(Error::ParseFailure, "Recovery entry is incomplete.");
         }
         const auto path = std::filesystem::path(snapshot["path"].get<std::string>());
         const auto& text = snapshot["text"].get_ref<const std::string&>();
         if (text.size() > MaxDocumentBytes || text.find('\0') != std::string::npos)
         {
-            return MakeError(Error::Unsupported,
-                             "Recovery entry is too large or contains binary data.");
+            return MAKE_ERROR_MSG(Error::Unsupported,
+                                  "Recovery entry is too large or contains binary data.");
         }
         auto document = Open(path);
         if (!document)
-            return MakeError(document.error());
+            return FORWARD_ERROR(document);
         (*document)->SetText(text);
         ++restored;
     }

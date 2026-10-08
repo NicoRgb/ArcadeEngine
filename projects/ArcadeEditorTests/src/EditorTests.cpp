@@ -42,8 +42,11 @@ class FailingCommand final : public EditorCommand
 {
 public:
     [[nodiscard]] const std::string& Name() const noexcept override { return m_Name; }
-    Result<void> Execute() override { return MakeError(Error::IoFailure, "deliberate failure"); }
-    Result<void> Undo() override { return MakeError(Error::IoFailure, "deliberate failure"); }
+    Result<void> Execute() override
+    {
+        return MAKE_ERROR_MSG(Error::IoFailure, "deliberate failure");
+    }
+    Result<void> Undo() override { return MAKE_ERROR_MSG(Error::IoFailure, "deliberate failure"); }
 
 private:
     std::string m_Name = "Fail";

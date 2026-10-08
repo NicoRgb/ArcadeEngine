@@ -25,7 +25,7 @@ Result<void> WriteJson(const std::filesystem::path& path, const json& value)
     std::filesystem::create_directories(path.parent_path(), error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to create settings directory.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to create settings directory.", error);
     }
     auto temporary = path;
     temporary += ".tmp";
@@ -33,14 +33,14 @@ Result<void> WriteJson(const std::filesystem::path& path, const json& value)
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
         if (!output)
         {
-            return MakeError(Error::PermissionDenied, "Unable to write " + path.string());
+            return MAKE_ERROR_MSG(Error::PermissionDenied, "Unable to write " + path.string());
         }
         output << value.dump(2) << '\n';
         output.flush();
         if (!output)
         {
             std::filesystem::remove(temporary, error);
-            return MakeError(Error::IoFailure, "Unable to write " + path.string());
+            return MAKE_ERROR_MSG(Error::IoFailure, "Unable to write " + path.string());
         }
     }
 #if defined(_WIN32)
@@ -50,7 +50,7 @@ Result<void> WriteJson(const std::filesystem::path& path, const json& value)
         const auto systemError =
             std::error_code(static_cast<int>(GetLastError()), std::system_category());
         std::filesystem::remove(temporary, error);
-        return MakeError(Error::IoFailure, "Unable to replace " + path.string(), systemError);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to replace " + path.string(), systemError);
     }
 #else
     std::filesystem::rename(temporary, path, error);
@@ -59,7 +59,7 @@ Result<void> WriteJson(const std::filesystem::path& path, const json& value)
         const auto replaceError = error;
         std::error_code ignored;
         std::filesystem::remove(temporary, ignored);
-        return MakeError(Error::IoFailure, "Unable to replace " + path.string(), replaceError);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to replace " + path.string(), replaceError);
     }
 #endif
     return {};
@@ -70,7 +70,7 @@ Result<json> ReadJson(const std::filesystem::path& path)
     std::ifstream input(path, std::ios::binary);
     if (!input)
     {
-        return MakeError(Error::NotFound, "Unable to open " + path.string());
+        return MAKE_ERROR_MSG(Error::NotFound, "Unable to open " + path.string());
     }
     try
     {
@@ -78,7 +78,7 @@ Result<json> ReadJson(const std::filesystem::path& path)
     }
     catch (const json::exception& exception)
     {
-        return MakeError(Error::ParseFailure, path.string() + ": " + exception.what());
+        return MAKE_ERROR_MSG(Error::ParseFailure, path.string() + ": " + exception.what());
     }
 }
 } // namespace
@@ -92,34 +92,35 @@ Result<EditorProject> EditorProject::Create(const std::filesystem::path& root, s
 {
     if (root.empty() || name.empty())
     {
-        return MakeError(Error::InvalidArgument, "Project path and name are required.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument, "Project path and name are required.");
     }
     std::error_code error;
     std::filesystem::create_directories(root, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to create project directory.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to create project directory.", error);
     }
     const auto descriptor = root / "ArcadeProject.json";
     if (std::filesystem::exists(descriptor, error))
     {
-        return MakeError(Error::AlreadyExists, "A project already exists in this directory.");
+        return MAKE_ERROR_MSG(Error::AlreadyExists, "A project already exists in this directory.");
     }
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to inspect project directory.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to inspect project directory.", error);
     }
     const auto assets = root / "Assets";
     std::filesystem::create_directories(assets, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to create project Assets directory.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to create project Assets directory.",
+                              error);
     }
 
     auto normalizedRoot = std::filesystem::weakly_canonical(root, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to resolve project directory.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to resolve project directory.", error);
     }
     json manifest{{"version", ProjectFormatVersion},
                   {"name", name},
@@ -128,7 +129,7 @@ Result<EditorProject> EditorProject::Create(const std::filesystem::path& root, s
     auto written = WriteJson(normalizedRoot / "ArcadeProject.json", manifest);
     if (!written)
     {
-        return MakeError(written.error());
+        return FORWARD_ERROR(written);
     }
     return EditorProject{std::move(name), normalizedRoot, normalizedRoot / "Assets",
                          json::object()};
@@ -140,13 +141,13 @@ Result<EditorProject> EditorProject::Open(const std::filesystem::path& descripto
     const auto normalizedDescriptor = std::filesystem::weakly_canonical(descriptor, error);
     if (error || !std::filesystem::is_regular_file(normalizedDescriptor, error) || error)
     {
-        return MakeError(Error::NotFound,
-                         "Project descriptor does not exist: " + descriptor.string(), error);
+        return MAKE_ERROR_EXT(Error::NotFound,
+                              "Project descriptor does not exist: " + descriptor.string(), error);
     }
     auto manifestResult = ReadJson(normalizedDescriptor);
     if (!manifestResult)
     {
-        return MakeError(manifestResult.error());
+        return FORWARD_ERROR(manifestResult);
     }
     const auto& manifest = *manifestResult;
     if (!manifest.is_object() || !manifest.contains("version") ||
@@ -155,28 +156,28 @@ Result<EditorProject> EditorProject::Open(const std::filesystem::path& descripto
         !manifest["name"].is_string() || !manifest.contains("assetRoot") ||
         !manifest["assetRoot"].is_string())
     {
-        return MakeError(Error::Unsupported,
-                         "Project manifest has an unsupported or incomplete format.");
+        return MAKE_ERROR_MSG(Error::Unsupported,
+                              "Project manifest has an unsupported or incomplete format.");
     }
     const auto root = normalizedDescriptor.parent_path();
     auto assetRoot =
         std::filesystem::weakly_canonical(root / manifest["assetRoot"].get<std::string>(), error);
     if (error || !std::filesystem::is_directory(assetRoot, error) || error)
     {
-        return MakeError(Error::NotFound, "Project asset directory does not exist.", error);
+        return MAKE_ERROR_EXT(Error::NotFound, "Project asset directory does not exist.", error);
     }
     auto relative = assetRoot.lexically_relative(root);
     if (relative.empty() || *relative.begin() == "..")
     {
-        return MakeError(Error::InvalidArgument,
-                         "Project asset directory must be inside the project.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument,
+                              "Project asset directory must be inside the project.");
     }
     json settings = json::object();
     if (manifest.contains("settings"))
     {
         if (!manifest["settings"].is_object())
         {
-            return MakeError(Error::ParseFailure, "Project settings must be a JSON object.");
+            return MAKE_ERROR_MSG(Error::ParseFailure, "Project settings must be a JSON object.");
         }
         settings = manifest["settings"];
     }
@@ -189,12 +190,12 @@ Result<EditorProject> EditorProjectService::Create(const std::filesystem::path& 
     auto project = EditorProject::Create(root, std::move(name));
     if (!project)
     {
-        return MakeError(project.error());
+        return FORWARD_ERROR(project);
     }
     auto remembered = Remember(project->DescriptorPath());
     if (!remembered)
     {
-        return MakeError(remembered.error());
+        return FORWARD_ERROR(remembered);
     }
     return project;
 }
@@ -204,12 +205,12 @@ Result<EditorProject> EditorProjectService::Open(const std::filesystem::path& de
     auto project = EditorProject::Open(descriptor);
     if (!project)
     {
-        return MakeError(project.error());
+        return FORWARD_ERROR(project);
     }
     auto remembered = Remember(project->DescriptorPath());
     if (!remembered)
     {
-        return MakeError(remembered.error());
+        return FORWARD_ERROR(remembered);
     }
     return project;
 }
@@ -221,18 +222,19 @@ Result<std::vector<std::filesystem::path>> EditorProjectService::RecentProjects(
     {
         if (error)
         {
-            return MakeError(Error::IoFailure, "Unable to inspect recent-project settings.", error);
+            return MAKE_ERROR_EXT(Error::IoFailure, "Unable to inspect recent-project settings.",
+                                  error);
         }
         return std::vector<std::filesystem::path>{};
     }
     auto dataResult = ReadJson(m_RecentProjectsFile);
     if (!dataResult)
     {
-        return MakeError(dataResult.error());
+        return FORWARD_ERROR(dataResult);
     }
     if (!dataResult->is_array())
     {
-        return MakeError(Error::ParseFailure, "Recent projects setting must be a JSON array.");
+        return MAKE_ERROR_MSG(Error::ParseFailure, "Recent projects setting must be a JSON array.");
     }
     std::vector<std::filesystem::path> result;
     for (const auto& entry : *dataResult)
@@ -256,7 +258,7 @@ Result<void> EditorProjectService::Remember(const std::filesystem::path& descrip
     auto recentResult = RecentProjects();
     if (!recentResult && recentResult.error().Code != Error::NotFound)
     {
-        return MakeError(recentResult.error());
+        return FORWARD_ERROR(recentResult);
     }
     std::vector<std::filesystem::path> recent =
         recentResult ? std::move(*recentResult) : std::vector<std::filesystem::path>{};
@@ -264,7 +266,7 @@ Result<void> EditorProjectService::Remember(const std::filesystem::path& descrip
     const auto normalized = std::filesystem::weakly_canonical(descriptor, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to resolve project descriptor.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to resolve project descriptor.", error);
     }
     std::erase(recent, normalized);
     recent.insert(recent.begin(), normalized);

@@ -26,7 +26,21 @@ struct AssetId
 {
     uint64_t UUID;
 
-    AssetId()
+    AssetId() { GenerateUUID(); }
+
+    AssetId(uint64_t uuid) : UUID(uuid)
+    {
+        if (uuid == 0)
+        {
+            GenerateUUID();
+        }
+    }
+
+    friend constexpr bool operator==(AssetId, AssetId) = default;
+    explicit constexpr operator bool() const noexcept { return UUID != 0; }
+
+private:
+    void GenerateUUID()
     {
         std::random_device rd;
         std::mt19937_64 gen(rd());
@@ -35,11 +49,6 @@ struct AssetId
 
         UUID = distrib(gen);
     }
-
-    AssetId(uint64_t uuid) : UUID(uuid) {}
-
-    friend constexpr bool operator==(AssetId, AssetId) = default;
-    explicit constexpr operator bool() const noexcept { return UUID != 0; }
 };
 
 struct AssetIdHash
@@ -84,9 +93,14 @@ public:
         return m_Metadata;
     }
 
+    [[nodiscard]] ARCADE_ENGINE_API Result<void> SetMetadataField(std::string_view key, json value);
+
 protected:
     std::filesystem::path m_Path;
     json m_Metadata;
+
+private:
+    [[nodiscard]] Result<void> WriteMetadata(const json& metadata) const;
 };
 
 class AssetRegisteree
@@ -110,7 +124,7 @@ public:
                 assetKey, path, std::move(metadata));                                              \
             if (!result)                                                                           \
             {                                                                                      \
-                return MakeError(result.error());                                                  \
+                return FORWARD_ERROR(result);                                                      \
             }                                                                                      \
             return Resource<Asset>(*result);                                                       \
         },                                                                                         \
@@ -129,6 +143,8 @@ public:
 
 private:
     Result<void> IndexAsset(const std::filesystem::path& path, std::string_view assetKey);
+    static Result<json> GetOrCreateConfig(std::string_view assetType,
+                                          const std::filesystem::path& configPath);
 
     std::unordered_map<AssetId, Resource<Asset>, AssetIdHash> m_Assets;
     std::unordered_map<AssetKey, AssetId, AssetKeyHash> m_ByKey;

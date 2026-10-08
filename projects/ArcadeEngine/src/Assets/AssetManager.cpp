@@ -1,8 +1,10 @@
 #include "Assets/AssetManager.hpp"
 #include "Application/Application.hpp"
 #include "Core/Result.hpp"
+#include "nlohmann/json.hpp"
 
-#include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <system_error>
 #include <vector>
@@ -65,20 +67,20 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error) || error)
     {
-        return MakeError(Error::InvalidArgument);
+        return MAKE_ERROR(Error::InvalidArgument);
     }
 
     const auto normalizedDirectory = std::filesystem::weakly_canonical(directory, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Could not resolve asset directory.", error);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Could not resolve asset directory.", error);
     }
 
     std::filesystem::recursive_directory_iterator it(normalizedDirectory, error);
     const std::filesystem::recursive_directory_iterator end;
     if (error)
     {
-        return MakeError(Error::InvalidArgument);
+        return MAKE_ERROR(Error::InvalidArgument);
     }
 
     while (it != end)
@@ -93,25 +95,25 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
             const auto absolutePath = std::filesystem::weakly_canonical(dirEntry.path(), error);
             if (error)
             {
-                return MakeError(Error::IoFailure, "Could not resolve asset path.", error);
+                return MAKE_ERROR_EXT(Error::IoFailure, "Could not resolve asset path.", error);
             }
             const auto relativePath = absolutePath.lexically_relative(normalizedDirectory);
             if (relativePath.empty() || *relativePath.begin() == "..")
             {
-                return MakeError(Error::InvalidArgument);
+                return MAKE_ERROR(Error::InvalidArgument);
             }
 
             auto res = IndexAsset(absolutePath, relativePath.generic_string());
             if (!res)
             {
-                return MakeError(res.error());
+                return FORWARD_ERROR(res);
             }
         }
 
         it.increment(error);
         if (error)
         {
-            return MakeError(Error::InvalidArgument);
+            return MAKE_ERROR(Error::InvalidArgument);
         }
     }
 
@@ -135,7 +137,7 @@ Result<void> AssetManager::RescanAssets(const std::filesystem::path& directory)
         auto unloaded = resourceManager.Unload(id);
         if (!unloaded && unloaded.error().Code != Error::NotFound)
         {
-            return MakeError(unloaded.error());
+            return FORWARD_ERROR(unloaded);
         }
     }
     m_Assets.clear();
@@ -148,14 +150,14 @@ Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::st
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error) || error)
     {
-        return MakeError(Error::InvalidArgument);
+        return MAKE_ERROR(Error::InvalidArgument);
     }
 
     const std::string extension = path.extension().string();
     const AssetKey key{.Name = std::string(assetKey)};
     if (m_ByKey.contains(key))
     {
-        return MakeError(Error::InvalidArgument);
+        return MAKE_ERROR(Error::InvalidArgument);
     }
 
     const AssetRegistry::AssetDesc* matchingAssetType = nullptr;
@@ -171,7 +173,7 @@ Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::st
             if (matchingAssetType != nullptr)
             {
                 LOG_ERROR("asset type is ambiguous for extension: {}", extension);
-                return MakeError(Error::InvalidArgument);
+                return MAKE_ERROR(Error::InvalidArgument);
             }
             matchingAssetType = &assetType;
             break;
@@ -183,20 +185,39 @@ Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::st
         return {};
     }
 
-    auto assetResult = matchingAssetType->CreateFunc(path, assetKey, json());
+    std::filesystem::path configPath = path.string() + ".asset";
+    Result<json> configResult = GetOrCreateConfig(matchingAssetType->Name, configPath);
+    if (!configResult)
+    {
+        return FORWARD_ERROR(configResult);
+    }
+
+    const json& config = configResult.value();
+    auto assetResult = matchingAssetType->CreateFunc(path, assetKey, config);
     if (!assetResult)
     {
-        return MakeError(assetResult.error());
+        return FORWARD_ERROR(assetResult);
     }
     Resource<Asset> asset = std::move(*assetResult);
     if (!asset)
-        return MakeError(Error::Internal,
-                         "Asset factory returned an empty resource: " + path.string());
+    {
+        return MAKE_ERROR_EXT(Error::Internal,
+                              "Asset factory returned an empty resource: " + path.string(), {});
+    }
 
-    AssetId id;
+    auto uuid = config.value<uint64_t>("UUID", 0);
+    AssetId id(uuid);
+
     while (m_Assets.contains(id))
     {
+        LOG_WARN("UUID collision");
         id = AssetId{};
+    }
+
+    auto metadataUpdated = asset->SetMetadataField("UUID", id.UUID);
+    if (!metadataUpdated)
+    {
+        return FORWARD_ERROR(metadataUpdated);
     }
 
     m_Assets.emplace(id, std::move(asset));
@@ -210,14 +231,55 @@ Result<Resource<Asset>> AssetManager::FindAsset(std::string_view name) const
     const auto it = m_ByKey.find(AssetKey{.Name = std::string(name)});
     if (it == m_ByKey.end())
     {
-        return MakeError(Error::NotFound);
+        return MAKE_ERROR(Error::NotFound);
     }
 
     const auto asset = m_Assets.find(it->second);
     if (asset == m_Assets.end())
     {
-        return MakeError(Error::NotFound);
+        return MAKE_ERROR(Error::NotFound);
     }
 
     return asset->second;
+}
+
+Result<json> AssetManager::GetOrCreateConfig(std::string_view assetType,
+                                             const std::filesystem::path& configPath)
+{
+    json config;
+    if (std::filesystem::exists(configPath))
+    {
+        std::ifstream configFile(configPath);
+        if (!configFile.is_open())
+        {
+            return MAKE_ERROR(Error::IoFailure);
+        }
+
+        config = json::parse(configFile);
+        configFile.close();
+
+        if (config["type"].get<std::string>() == assetType)
+        {
+            return config;
+        }
+
+        LOG_WARN("Config has incorrect asset type... Regenerating {}",
+                 configPath.filename().string());
+    }
+
+    config = {};
+    config["type"] = assetType;
+
+    std::ofstream configFile(configPath);
+    if (!configFile.is_open())
+    {
+        return MAKE_ERROR(Error::IoFailure);
+    }
+
+    configFile << config.dump(4);
+    configFile.close();
+
+    LOG_INFO("Dumping {}", configPath.string());
+
+    return config;
 }

@@ -25,7 +25,7 @@ AssetRegisteree g_TestAssetRegistration(
             assetKey, path, std::move(metadata));
         if (!result)
         {
-            return Result<Resource<Asset>>(MakeError(result.error()));
+            return Result<Resource<Asset>>(FORWARD_ERROR(result));
         }
         return Result<Resource<Asset>>(Resource<Asset>(*result));
     },

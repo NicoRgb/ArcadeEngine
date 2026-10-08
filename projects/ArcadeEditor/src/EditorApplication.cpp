@@ -541,8 +541,8 @@ Result<void> EditorApplication::SetProject(EditorProject project)
     if (m_PanelContext.Project && m_PanelContext.Project->Root != project.Root &&
         HasUnsavedChanges())
     {
-        return MakeError(Error::InvalidState,
-                         "Save or discard open edits before switching projects.");
+        return MAKE_ERROR_MSG(Error::InvalidState,
+                              "Save or discard open edits before switching projects.");
     }
     if (m_PanelContext.Assets != nullptr)
     {
@@ -551,7 +551,7 @@ Result<void> EditorApplication::SetProject(EditorProject project)
         {
             m_EditorLogger.LogError("Could not index project assets at {}: {}",
                                     project.AssetRoot.string(), ErrorMessage(indexed.error()));
-            return MakeError(indexed.error());
+            return FORWARD_ERROR(indexed);
         }
     }
     if (m_PanelContext.Project && m_PanelContext.Project->Root != project.Root)

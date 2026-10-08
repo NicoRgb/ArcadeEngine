@@ -21,16 +21,16 @@ Result<Resource<EditorImage>> EditorThumbnailCache::Get(ResourceManager& resourc
     std::ifstream input(path, std::ios::binary);
     if (!input)
     {
-        return MakeError(Error::PermissionDenied,
-                         "Unable to read thumbnail source: " + path.string());
+        return MAKE_ERROR_MSG(Error::PermissionDenied,
+                              "Unable to read thumbnail source: " + path.string());
     }
     std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(input)),
                                      std::istreambuf_iterator<char>());
     if (input.bad() || bytes.empty() || bytes.size() > 64U * 1024U * 1024U ||
         bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
     {
-        return MakeError(Error::IoFailure,
-                         "Thumbnail source is empty or could not be read: " + path.string());
+        return MAKE_ERROR_MSG(Error::IoFailure,
+                              "Thumbnail source is empty or could not be read: " + path.string());
     }
     int width = 0;
     int height = 0;
@@ -42,8 +42,8 @@ Result<Resource<EditorImage>> EditorThumbnailCache::Get(ResourceManager& resourc
     {
         if (decoded != nullptr)
             stbi_image_free(decoded);
-        return MakeError(Error::Unsupported,
-                         "Unable to decode image thumbnail: " + path.filename().string());
+        return MAKE_ERROR_MSG(Error::Unsupported,
+                              "Unable to decode image thumbnail: " + path.filename().string());
     }
     auto image = std::make_shared<EditorImage>();
     constexpr int MaximumPreviewDimension = 256;
@@ -62,8 +62,8 @@ Result<Resource<EditorImage>> EditorThumbnailCache::Get(ResourceManager& resourc
                                image->Height, 0, 4) == 0)
         {
             stbi_image_free(decoded);
-            return MakeError(Error::IoFailure,
-                             "Unable to resize image thumbnail: " + path.filename().string());
+            return MAKE_ERROR_MSG(Error::IoFailure,
+                                  "Unable to resize image thumbnail: " + path.filename().string());
         }
     }
     stbi_image_free(decoded);
@@ -81,7 +81,7 @@ Result<Resource<EditorImage>> EditorThumbnailCache::Get(ResourceManager& resourc
                 return *existing;
             }
         }
-        return MakeError(result.error());
+        return FORWARD_ERROR(result);
     }
     m_Images.emplace(path, *result);
     return *result;

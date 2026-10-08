@@ -290,14 +290,14 @@ public:
     {
         if (!object)
         {
-            return MakeError(Error::InvalidArgument);
+            return MAKE_ERROR(Error::InvalidArgument);
         }
 
         auto result = Insert<T>(ResourceType::Owned, name, std::move(object));
 
         if (!result)
         {
-            return MakeError(result.error());
+            return FORWARD_ERROR(result);
         }
 
         const auto* entry = static_cast<const Entry<T>*>(m_Entries.at(result->Id()).get());
@@ -311,7 +311,7 @@ public:
     {
         if (!object)
         {
-            return MakeError(Error::InvalidArgument);
+            return MAKE_ERROR(Error::InvalidArgument);
         }
 
         return InsertOwned<T>(name, std::shared_ptr<T>(std::move(object)));
@@ -325,7 +325,7 @@ public:
 
         if (!entry || entry->Type != ResourceType::Shared)
         {
-            return MakeError(Error::NotFound);
+            return MAKE_ERROR(Error::NotFound);
         }
 
         return Resource<T>(rid, entry->Object);
@@ -339,7 +339,7 @@ public:
 
         if (!entry || entry->Type != ResourceType::Owned)
         {
-            return MakeError(Error::NotFound);
+            return MAKE_ERROR(Error::NotFound);
         }
 
         return BorrowedResource<T>(rid, entry->Object);
@@ -367,7 +367,7 @@ public:
 
         if (!rid)
         {
-            return MakeError(Error::NotFound);
+            return MAKE_ERROR(Error::NotFound);
         }
 
         return GetOwned<T>(*rid);
@@ -400,7 +400,7 @@ public:
 
         if (it == m_Entries.end())
         {
-            return MakeError(Error::NotFound);
+            return MAKE_ERROR(Error::NotFound);
         }
 
         EraseEntry(it);
@@ -414,7 +414,7 @@ public:
 
         if (it == m_Entries.end() || it->second->Type != ResourceType::Owned)
         {
-            return MakeError(Error::NotFound);
+            return MAKE_ERROR(Error::NotFound);
         }
 
         EraseEntry(it);
@@ -441,14 +441,14 @@ private:
     {
         if (!object)
         {
-            return MakeError(Error::InvalidArgument);
+            return MAKE_ERROR(Error::InvalidArgument);
         }
 
         const ResourceKey key{.Type = typeid(T), .Name = std::string(name)};
 
         if (!name.empty() && m_ByKey.contains(key))
         {
-            return MakeError(Error::InvalidArgument);
+            return MAKE_ERROR(Error::InvalidArgument);
         }
 
         const ResourceId id = NextId();

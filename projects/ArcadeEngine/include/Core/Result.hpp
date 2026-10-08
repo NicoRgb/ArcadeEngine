@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/Export.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -20,7 +21,7 @@ enum class Error : uint8_t
     InvalidState,
     Unsupported,
     Cancelled,
-    Internal
+    Internal,
 };
 
 struct ErrorInfo
@@ -39,16 +40,17 @@ struct ErrorInfo
 template <typename T>
 using Result = std::expected<T, ErrorInfo>;
 
-inline std::unexpected<ErrorInfo> MakeError(Error code, std::string message = {},
-                                            std::error_code systemCode = {})
-{
-    return std::unexpected<ErrorInfo>(ErrorInfo{code, std::move(message), systemCode});
-}
+#define MAKE_ERROR(code) MakeError(code, "no message", {}, __FILE__, __LINE__)
+#define MAKE_ERROR_MSG(code, msg) MakeError(code, msg, {}, __FILE__, __LINE__)
+#define MAKE_ERROR_EXT(code, msg, sys) MakeError(code, msg, sys, __FILE__, __LINE__)
 
-inline std::unexpected<ErrorInfo> MakeError(ErrorInfo error)
-{
-    return std::unexpected<ErrorInfo>(std::move(error));
-}
+#define FORWARD_ERROR(err) MakeError((err).error())
+
+ARCADE_ENGINE_API std::unexpected<ErrorInfo> MakeError(Error code, std::string message = {},
+                                                       std::error_code systemCode = {},
+                                                       std::string file = {}, uint64_t line = 0);
+
+ARCADE_ENGINE_API std::unexpected<ErrorInfo> MakeError(ErrorInfo error);
 
 inline const char* ErrorString(Error error)
 {

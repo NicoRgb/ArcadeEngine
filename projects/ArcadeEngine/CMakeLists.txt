@@ -1,8 +1,10 @@
 add_library(ArcadeEngine SHARED
+    src/Core/Result.cpp
     src/Application/Application.cpp
     src/Application/GraphicsDevice.cpp
     src/Application/Logger.cpp
     src/Application/Window.cpp
+    src/Assets/Asset.cpp
     src/Assets/AssetManager.cpp
     src/Assets/ShaderAsset.cpp
 )

@@ -28,9 +28,9 @@ Result<void> EditorAssetWatcher::Start(const std::filesystem::path& root)
     const auto canonical = std::filesystem::weakly_canonical(root, error);
     if (error || !std::filesystem::is_directory(canonical, error) || error)
     {
-        return MakeError(Error::NotFound,
-                         "Asset watcher root is not an accessible directory: " + root.string(),
-                         error);
+        return MAKE_ERROR_EXT(Error::NotFound,
+                              "Asset watcher root is not an accessible directory: " + root.string(),
+                              error);
     }
     m_Impl->Root = canonical;
     m_Impl->Failed = false;

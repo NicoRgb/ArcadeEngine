@@ -26,7 +26,7 @@ TEST_CASE("ResultOrThrow returns successful values", "[core][result]")
 {
     CHECK(ResultOrThrow(Result<int>{42}) == 42);
     CHECK_NOTHROW(ResultOrThrow(Result<void>{}));
-    CHECK_FALSE(Result<int>{MakeError(Error::NotFound)});
+    CHECK_FALSE(Result<int>{MAKE_ERROR(Error::NotFound)});
     CHECK(std::string_view(ErrorString(Error::InvalidArgument)) == "InvalidArgument");
     const auto richError = ErrorInfo{Error::IoFailure, "read failed",
                                      std::make_error_code(std::errc::permission_denied)};

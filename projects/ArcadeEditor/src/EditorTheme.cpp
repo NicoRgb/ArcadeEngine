@@ -152,14 +152,14 @@ Result<void> EditorThemeManager::Load()
     std::error_code error;
     if (!std::filesystem::exists(m_SettingsFile, error))
     {
-        return error ? Result<void>(
-                           MakeError(Error::IoFailure, "Unable to inspect editor settings.", error))
+        return error ? Result<void>(MAKE_ERROR_EXT(Error::IoFailure,
+                                                   "Unable to inspect editor settings.", error))
                      : Result<void>{};
     }
     std::ifstream input(m_SettingsFile);
     if (!input)
     {
-        return MakeError(Error::PermissionDenied, "Unable to read editor settings.");
+        return MAKE_ERROR_MSG(Error::PermissionDenied, "Unable to read editor settings.");
     }
     try
     {
@@ -177,7 +177,7 @@ Result<void> EditorThemeManager::Load()
     }
     catch (const json::exception& exception)
     {
-        return MakeError(Error::ParseFailure, exception.what());
+        return MAKE_ERROR_MSG(Error::ParseFailure, exception.what());
     }
     return {};
 }
@@ -190,8 +190,8 @@ Result<void> EditorThemeManager::Set(EditorTheme theme)
         std::filesystem::create_directories(m_SettingsFile.parent_path(), error);
         if (error)
         {
-            return MakeError(Error::IoFailure, "Unable to create editor settings directory.",
-                             error);
+            return MAKE_ERROR_EXT(Error::IoFailure, "Unable to create editor settings directory.",
+                                  error);
         }
     }
     auto temporary = m_SettingsFile;
@@ -199,7 +199,7 @@ Result<void> EditorThemeManager::Set(EditorTheme theme)
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
     if (!output)
     {
-        return MakeError(Error::PermissionDenied, "Unable to save editor settings.");
+        return MAKE_ERROR_MSG(Error::PermissionDenied, "Unable to save editor settings.");
     }
     output << json{{"theme", ThemeName(theme)}}.dump(2) << '\n';
     output.flush();
@@ -207,7 +207,7 @@ Result<void> EditorThemeManager::Set(EditorTheme theme)
     {
         output.close();
         std::filesystem::remove(temporary, error);
-        return MakeError(Error::IoFailure, "Unable to save editor settings.");
+        return MAKE_ERROR_MSG(Error::IoFailure, "Unable to save editor settings.");
     }
     output.close();
 #if defined(_WIN32)
@@ -217,7 +217,7 @@ Result<void> EditorThemeManager::Set(EditorTheme theme)
         const auto systemError =
             std::error_code(static_cast<int>(GetLastError()), std::system_category());
         std::filesystem::remove(temporary, error);
-        return MakeError(Error::IoFailure, "Unable to replace editor settings.", systemError);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to replace editor settings.", systemError);
     }
 #else
     std::filesystem::rename(temporary, m_SettingsFile, error);
@@ -226,7 +226,7 @@ Result<void> EditorThemeManager::Set(EditorTheme theme)
         const auto replaceError = error;
         std::error_code ignored;
         std::filesystem::remove(temporary, ignored);
-        return MakeError(Error::IoFailure, "Unable to replace editor settings.", replaceError);
+        return MAKE_ERROR_EXT(Error::IoFailure, "Unable to replace editor settings.", replaceError);
     }
 #endif
     m_Current = theme;

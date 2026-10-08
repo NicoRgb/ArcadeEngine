@@ -30,13 +30,13 @@ public:
         std::ifstream input(m_Path, std::ios::binary);
         if (!input)
         {
-            return MakeError(Error::NotFound, "Could not open shader: " + m_Path.string());
+            return MAKE_ERROR_MSG(Error::NotFound, "Could not open shader: " + m_Path.string());
         }
         std::string source((std::istreambuf_iterator<char>(input)),
                            std::istreambuf_iterator<char>());
         if (input.bad())
         {
-            return MakeError(Error::IoFailure, "Could not read shader: " + m_Path.string());
+            return MAKE_ERROR_MSG(Error::IoFailure, "Could not read shader: " + m_Path.string());
         }
         m_Source = std::move(source);
         return {};

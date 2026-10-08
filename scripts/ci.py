@@ -147,6 +147,12 @@ def build(preset: str) -> None:
     run(command)
 
 
+def build_only(preset: str) -> None:
+    """Build an already-configured preset without checking or configuring it."""
+    cmake = require_program("cmake")
+    run([cmake, "--build", "--preset", preset])
+
+
 def lint() -> None:
     require_program("clang-tidy")
 
@@ -396,6 +402,17 @@ def main() -> int:
         required=True,
     )
 
+    build_only_parser = subparsers.add_parser(
+        "build-only",
+        help="Build an already-configured CMake preset without setup steps.",
+    )
+
+    build_only_parser.add_argument(
+        "--preset",
+        choices=("debug", "release", "clang-tidy", "asan", "ubsan"),
+        default="debug",
+    )
+
     subparsers.add_parser(
         "lint",
         help="Configure and build with clang-tidy.",
@@ -430,7 +447,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        if args.command != "format":
+        if args.command not in {"format", "build-only"}:
             check_submodules()
 
         # Ninja Multi-Config + MSVC needs the VS developer environment when
@@ -445,6 +462,9 @@ def main() -> int:
 
         elif args.command == "build":
             build(args.preset)
+
+        elif args.command == "build-only":
+            build_only(args.preset)
 
         elif args.command == "lint":
             lint()

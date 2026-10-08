@@ -460,20 +460,20 @@ EditorPanelContext::OpenFile(const std::filesystem::path& path)
     const auto root = std::filesystem::weakly_canonical(AssetRoot, error);
     if (error)
     {
-        return MakeError(Error::IoFailure, "Unable to resolve asset root: " + AssetRoot.string(),
-                         error);
+        return MAKE_ERROR_EXT(Error::IoFailure,
+                              "Unable to resolve asset root: " + AssetRoot.string(), error);
     }
     const auto resolved = std::filesystem::weakly_canonical(path, error);
     if (error || !IsWithin(root, resolved))
     {
-        return MakeError(Error::InvalidArgument, "Asset path resolves outside the asset root.",
-                         error);
+        return MAKE_ERROR_EXT(Error::InvalidArgument, "Asset path resolves outside the asset root.",
+                              error);
     }
 
     auto opened = Documents.Open(resolved);
     if (!opened)
     {
-        return MakeError(opened.error());
+        return FORWARD_ERROR(opened);
     }
     auto document = std::move(*opened);
     SelectedAsset = resolved;
@@ -662,7 +662,7 @@ Result<void> EditorApplicationFactory::RegisterPanel(PanelFactory factory)
 {
     if (!factory)
     {
-        return MakeError(Error::InvalidArgument, "Panel factory cannot be empty.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument, "Panel factory cannot be empty.");
     }
     m_PanelFactories.push_back(std::move(factory));
     return {};
@@ -672,7 +672,7 @@ Result<void> EditorApplicationFactory::RegisterFileEditor(FileEditorFactory fact
 {
     if (!factory)
     {
-        return MakeError(Error::InvalidArgument, "File editor factory cannot be empty.");
+        return MAKE_ERROR_MSG(Error::InvalidArgument, "File editor factory cannot be empty.");
     }
     m_FileEditorFactories.push_back(std::move(factory));
     return {};
