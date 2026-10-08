@@ -18,6 +18,8 @@
 #include "Core/Resource.hpp"
 #include "Core/Result.hpp"
 
+#include "Application/Application.hpp"
+
 using nlohmann::json;
 
 struct AssetId
@@ -104,8 +106,13 @@ public:
         [](const std::filesystem::path& path, std::string_view assetKey,                           \
            json metadata) -> Result<Resource<Asset>>                                               \
         {                                                                                          \
-            return Application::Get().GetResourceManager().CreateShared<className>(                \
+            auto result = Application::Get().GetResourceManager().CreateShared<className>(         \
                 assetKey, path, std::move(metadata));                                              \
+            if (!result)                                                                           \
+            {                                                                                      \
+                return MakeError(result.error());                                                  \
+            }                                                                                      \
+            return Resource<Asset>(*result);                                                       \
         },                                                                                         \
         {__VA_ARGS__}};
 
@@ -116,6 +123,7 @@ public:
     ~AssetManager() = default;
 
     ARCADE_ENGINE_API Result<void> IndexAssets(const std::filesystem::path& directory);
+    ARCADE_ENGINE_API Result<void> RescanAssets(const std::filesystem::path& directory);
     [[nodiscard]] ARCADE_ENGINE_API Result<Resource<Asset>> FindAsset(std::string_view name) const;
     [[nodiscard]] size_t IndexedAssetCount() const noexcept { return m_Assets.size(); }
 

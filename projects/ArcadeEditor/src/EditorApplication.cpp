@@ -1,9 +1,10 @@
 #include "ArcadeEditor/EditorApplication.hpp"
-#include "ArcadeEditor/EditorTheme.hpp"
 #include "ArcadeEditor/EditorDockspaceBuilder.hpp"
+#include "ArcadeEditor/EditorTheme.hpp"
 
 #include "Application/Application.hpp"
 #include "Application/Window.hpp"
+#include "Assets/AssetManager.hpp"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -96,6 +97,7 @@ int EditorApplication::Run()
     m_EditorLogger.AddSink(std::make_shared<StdoutLogSink>());
     m_EditorLogger.AddSink(m_LogBuffer);
     m_PanelContext.Resources = &m_EngineApplication->GetResourceManager();
+    m_PanelContext.Assets = &m_EngineApplication->GetAssetManager();
     m_Window = std::make_unique<Window>(WindowSpec{.Title = "Arcade Editor",
                                                    .Width = 1600,
                                                    .Height = 1000,
@@ -541,6 +543,16 @@ Result<void> EditorApplication::SetProject(EditorProject project)
     {
         return MakeError(Error::InvalidState,
                          "Save or discard open edits before switching projects.");
+    }
+    if (m_PanelContext.Assets != nullptr)
+    {
+        auto indexed = m_PanelContext.Assets->RescanAssets(project.AssetRoot);
+        if (!indexed)
+        {
+            m_EditorLogger.LogError("Could not index project assets at {}: {}",
+                                    project.AssetRoot.string(), ErrorMessage(indexed.error()));
+            return MakeError(indexed.error());
+        }
     }
     if (m_PanelContext.Project && m_PanelContext.Project->Root != project.Root)
     {

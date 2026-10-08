@@ -17,6 +17,7 @@
 #include <vector>
 
 struct ImFont;
+class AssetManager;
 class EditorFileEditorRegistry;
 
 struct EditorPanelContext
@@ -25,6 +26,7 @@ struct EditorPanelContext
     UndoRedoStack& History;
     EditorFileEditorRegistry& FileEditors;
     std::filesystem::path AssetRoot;
+    AssetManager* Assets = nullptr;
     ResourceManager* Resources = nullptr;
     EditorLogBuffer* Logs = nullptr;
     std::optional<EditorProject> Project;

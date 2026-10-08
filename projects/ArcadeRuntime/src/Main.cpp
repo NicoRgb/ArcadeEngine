@@ -1,18 +1,31 @@
-#include "Application/Application.hpp"
-#include "Application/GraphicsDevice.hpp"
-#include "Application/Window.hpp"
+#include "RuntimeApplication.hpp"
 
-int main()
+#include <exception>
+#include <iostream>
+#include <string_view>
+#include <utility>
+
+int main(int argc, char** argv)
 {
-    Application application;
-    Window window({.Title = "Arcade Runtime"});
-    GraphicsDevice graphicsDevice(window);
-
-    while (!window.ShouldClose())
+    std::filesystem::path assetDirectory;
+    if (argc == 3 && std::string_view(argv[1]) == "--assets")
     {
-        WindowSubsystem::WaitEventsTimeout(1.0 / 60.0);
+        assetDirectory = argv[2];
+    }
+    else if (argc != 1)
+    {
+        std::cerr << "Usage: ArcadeRuntime [--assets <directory>]\n";
+        return 2;
     }
 
-    (void)graphicsDevice.WaitForIdle();
-    return 0;
+    try
+    {
+        RuntimeApplication app(std::move(assetDirectory));
+        return app.Run();
+    }
+    catch (const std::exception& exception)
+    {
+        std::cerr << "ArcadeRuntime failed: " << exception.what() << '\n';
+        return 1;
+    }
 }

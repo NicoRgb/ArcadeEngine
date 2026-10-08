@@ -1,8 +1,11 @@
 #include "Assets/AssetManager.hpp"
 #include "Application/Application.hpp"
+#include "Core/Result.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <system_error>
+#include <vector>
 
 class AssetRegistry
 {
@@ -57,13 +60,21 @@ AssetRegisteree::AssetRegisteree(
 
 Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
 {
+    LOG_INFO("Indexing asset directory {}", directory.string());
+
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error) || error)
     {
         return MakeError(Error::InvalidArgument);
     }
 
-    std::filesystem::recursive_directory_iterator it(directory, error);
+    const auto normalizedDirectory = std::filesystem::weakly_canonical(directory, error);
+    if (error)
+    {
+        return MakeError(Error::IoFailure, "Could not resolve asset directory.", error);
+    }
+
+    std::filesystem::recursive_directory_iterator it(normalizedDirectory, error);
     const std::filesystem::recursive_directory_iterator end;
     if (error)
     {
@@ -79,13 +90,18 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
         }
         else if (dirEntry.path().extension() != ".asset")
         {
-            const auto relativePath = dirEntry.path().lexically_relative(directory);
+            const auto absolutePath = std::filesystem::weakly_canonical(dirEntry.path(), error);
+            if (error)
+            {
+                return MakeError(Error::IoFailure, "Could not resolve asset path.", error);
+            }
+            const auto relativePath = absolutePath.lexically_relative(normalizedDirectory);
             if (relativePath.empty() || *relativePath.begin() == "..")
             {
                 return MakeError(Error::InvalidArgument);
             }
 
-            auto res = IndexAsset(dirEntry.path(), relativePath.filename().generic_string());
+            auto res = IndexAsset(absolutePath, relativePath.generic_string());
             if (!res)
             {
                 return MakeError(res.error());
@@ -99,7 +115,32 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
         }
     }
 
+    LOG_INFO("Indexed {} registered assets", IndexedAssetCount());
+
     return {};
+}
+
+Result<void> AssetManager::RescanAssets(const std::filesystem::path& directory)
+{
+    auto& resourceManager = Application::Get().GetResourceManager();
+    std::vector<ResourceId> oldResources;
+    oldResources.reserve(m_Assets.size());
+    for (const auto& [id, asset] : m_Assets)
+    {
+        (void)id;
+        oldResources.push_back(asset.Id());
+    }
+    for (const ResourceId id : oldResources)
+    {
+        auto unloaded = resourceManager.Unload(id);
+        if (!unloaded && unloaded.error().Code != Error::NotFound)
+        {
+            return MakeError(unloaded.error());
+        }
+    }
+    m_Assets.clear();
+    m_ByKey.clear();
+    return IndexAssets(directory);
 }
 
 Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::string_view assetKey)
@@ -139,16 +180,18 @@ Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::st
 
     if (matchingAssetType == nullptr)
     {
-        LOG_ERROR("asset type not supported: {}", path.string());
         return {};
     }
 
-    auto result = matchingAssetType->CreateFunc(path, assetKey, json());
-    if (!result)
+    auto assetResult = matchingAssetType->CreateFunc(path, assetKey, json());
+    if (!assetResult)
     {
-        return MakeError(result.error());
+        return MakeError(assetResult.error());
     }
-    Resource<Asset> asset = std::move(*result);
+    Resource<Asset> asset = std::move(*assetResult);
+    if (!asset)
+        return MakeError(Error::Internal,
+                         "Asset factory returned an empty resource: " + path.string());
 
     AssetId id;
     while (m_Assets.contains(id))

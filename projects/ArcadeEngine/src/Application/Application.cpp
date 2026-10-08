@@ -17,8 +17,12 @@ Application::Application() : m_EngineLogger(std::make_shared<StdoutLogSink>())
         throw std::logic_error("Only one Application may be active at a time.");
     }
 
-    (void)ResultOrThrow(m_ResourceManager.GetSingleton<AssetManager>());
     s_Instance = this;
+}
+
+AssetManager& Application::GetAssetManager()
+{
+    return *ResultOrThrow(m_ResourceManager.GetSingleton<AssetManager>()).Get();
 }
 
 Application::~Application()

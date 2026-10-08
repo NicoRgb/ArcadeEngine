@@ -1,10 +1,12 @@
 #pragma once
 
-#include <stdexcept>
-
 #include "Application/Logger.hpp"
 #include "Core/Export.hpp"
 #include "Core/Resource.hpp"
+
+#include <memory>
+
+class AssetManager;
 
 class Application
 {
@@ -21,6 +23,7 @@ public:
 
     Logger& GetEngineLogger() { return m_EngineLogger; }
     ResourceManager& GetResourceManager() { return m_ResourceManager; }
+    ARCADE_ENGINE_API AssetManager& GetAssetManager();
 
 private:
     static Application* s_Instance;
@@ -29,7 +32,7 @@ private:
     Logger m_EngineLogger;
 };
 
-#if !defined(NDEBUG)
+#ifndef NDEBUG
 #define LOG_DEBUG(...) Application::Get().GetEngineLogger().LogDebug(__VA_ARGS__)
 #else
 #define LOG_DEBUG(...) ((void)0)

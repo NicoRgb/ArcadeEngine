@@ -4,6 +4,7 @@ add_library(ArcadeEngine SHARED
     src/Application/Logger.cpp
     src/Application/Window.cpp
     src/Assets/AssetManager.cpp
+    src/Assets/ShaderAsset.cpp
 )
 
 target_compile_definitions(ArcadeEngine PRIVATE ARCADE_ENGINE_BUILD GLFW_INCLUDE_NONE)

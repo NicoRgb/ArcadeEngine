@@ -60,7 +60,7 @@ public:
     Resource() = default;
 
     template <typename U>
-    Resource(const Resource<U>& other) noexcept
+    Resource(Resource<U> other) noexcept
         requires(std::is_convertible_v<U*, T*>)
         : m_Id(other.m_Id), m_Pointer(other.m_Pointer)
     {

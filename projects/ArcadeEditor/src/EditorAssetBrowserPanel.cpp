@@ -3,15 +3,16 @@
 #include "ArcadeEditor/EditorTheme.hpp"
 #include "ArcadeEditor/EditorThumbnail.hpp"
 
+#include "Assets/AssetManager.hpp"
+
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
-#include <fstream>
-#include <stdexcept>
 #include <system_error>
 #include <unordered_map>
 #include <unordered_set>
@@ -59,7 +60,7 @@ unsigned int FileColor(const std::filesystem::path& path)
     {
         return 0x4fc7ac;
     }
-    if (extension == ".hlsl" || extension == ".glsl" || extension == ".shader" ||
+    if (extension == ".hlsl" || extension == ".glsl" || extension == ".slang" ||
         extension == ".vert" || extension == ".frag" || extension == ".comp")
     {
         return 0x9f82ff;
@@ -117,11 +118,6 @@ void DrawFileIconAt(const std::filesystem::path& path, bool directory, ImVec2 or
     }
 }
 
-void DrawFileIcon(const std::filesystem::path& path, bool directory, ImVec2 size = ImVec2(28, 28))
-{
-    DrawFileIconAt(path, directory, ImGui::GetCursorScreenPos(), size);
-}
-
 class AssetBrowserPanel final : public EditorPanel
 {
 public:
@@ -165,12 +161,14 @@ public:
         if (!changes.empty())
         {
             m_LastScan = {};
+            bool needsAssetRescan = false;
             for (const auto& changedPath : changes)
             {
                 std::error_code pathError;
                 const auto normalized = std::filesystem::weakly_canonical(changedPath, pathError);
                 if (pathError || !IsWithin(m_Root, normalized))
                     continue;
+                needsAssetRescan = true;
                 if (context.Resources)
                     m_ThumbnailCache.Invalidate(*context.Resources, normalized);
                 if (const auto texture = m_GpuTextures.find(normalized);
@@ -187,13 +185,21 @@ public:
                         context.Logs->ReceiveMessage(LogLevel::Warn, context.Status);
                 }
             }
+            if (needsAssetRescan && context.Assets != nullptr)
+            {
+                auto indexed = context.Assets->RescanAssets(m_Root);
+                if (!indexed)
+                {
+                    context.Status = "Asset rescan failed: " + ErrorMessage(indexed.error());
+                    if (context.Logs)
+                        context.Logs->ReceiveMessage(LogLevel::Error, context.Status);
+                }
+            }
         }
 
         ImGui::SetNextItemWidth(220.0F);
         ImGui::InputTextWithHint("##asset-filter", "Search assets...", m_Filter.data(),
                                  m_Filter.size());
-        ImGui::SameLine();
-        ImGui::Checkbox("List", &m_ListView);
         ImGui::SameLine();
         if (ImGui::SmallButton("Refresh"))
             m_LastScan = {};
@@ -225,48 +231,39 @@ public:
             }
             ImGui::EndChild();
             ImGui::TableSetColumnIndex(1);
-            DrawBreadcrumbs();
-            ImGui::Separator();
+
+            if (ImGui::BeginChild("AssetContents", ImVec2(0, 0)))
+            {
+                DrawBreadcrumbs();
+                ImGui::Separator();
+
+                const auto now = std::chrono::steady_clock::now();
+                if (m_LastScan.time_since_epoch().count() == 0 ||
+                    now - m_LastScan > std::chrono::milliseconds(650))
+                {
+                    RefreshEntries(context);
+                    m_FolderCache.clear();
+                    m_LastScan = now;
+                }
+
+                if (!m_ScanError.empty())
+                {
+                    ImGui::TextColored(Color(0xff766f), "Can't read this folder: %s",
+                                       m_ScanError.c_str());
+                }
+                else if (ImGui::BeginChild("AssetRows", ImVec2(0, 0)))
+                {
+                    DrawEntries(context, m_Entries);
+                }
+                ImGui::EndChild();
+            }
+            ImGui::EndChild();
+            ImGui::EndTable();
         }
         else
         {
             return;
         }
-
-        const auto now = std::chrono::steady_clock::now();
-        if (m_LastScan.time_since_epoch().count() == 0 ||
-            now - m_LastScan > std::chrono::milliseconds(650))
-        {
-            RefreshEntries(context);
-            m_FolderCache.clear();
-            m_LastScan = now;
-        }
-        if (!m_ScanError.empty())
-        {
-            ImGui::TextColored(Color(0xff766f), "Can't read this folder: %s", m_ScanError.c_str());
-            ImGui::EndTable();
-            return;
-        }
-        const auto& entries = m_Entries;
-
-        if (m_ListView)
-        {
-            if (ImGui::BeginTable("AssetRows", 2,
-                                  ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
-            {
-                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0.76F);
-                ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthStretch, 0.24F);
-                DrawEntries(context, entries, false);
-                ImGui::EndTable();
-            }
-        }
-        else if (ImGui::BeginChild("AssetGrid", ImVec2(0, 0)))
-        {
-            DrawEntries(context, entries, true);
-        }
-        if (!m_ListView)
-            ImGui::EndChild();
-        ImGui::EndTable();
 
         if (m_OpenRenamePopup)
         {
@@ -312,7 +309,7 @@ public:
             }
             ImGui::EndPopup();
         }
-        ImGui::TextDisabled("%zu items  ·  Double click to open", entries.size());
+        ImGui::TextDisabled("%zu items  ·  Double click to open", m_Entries.size());
     }
 
 private:
@@ -476,7 +473,6 @@ private:
         const auto title = path == m_Root ? "Assets" : path.filename().string();
         ImGui::PushID(id.c_str());
         ImGui::GetStateStorage()->SetInt(ImGui::GetID(title.c_str()), expanded ? 1 : 0);
-        ImGui::PushID(title.c_str());
 
         std::error_code error;
         for (std::filesystem::directory_iterator it(path, error), end; !error && it != end;
@@ -492,7 +488,6 @@ private:
                 SetFolderExpansion(candidate, expanded);
             error.clear();
         }
-        ImGui::PopID();
         ImGui::PopID();
         m_FolderTraversal.erase(path);
     }
@@ -517,92 +512,88 @@ private:
     }
 
     void DrawEntries(EditorPanelContext& context,
-                     const std::vector<std::filesystem::directory_entry>& entries, bool grid)
+                     const std::vector<std::filesystem::directory_entry>& entries)
     {
-        std::size_t visibleCount = 0;
-        const float tileWidth = 112.0F;
-        const int columns =
-            grid ? std::max(1, static_cast<int>(ImGui::GetContentRegionAvail().x / tileWidth)) : 1;
-        const bool gridTable =
-            grid && ImGui::BeginTable("AssetGridTable", columns,
-                                      ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoPadOuterX);
+        if (!ImGui::BeginTable("AssetRowsTable", 1,
+                               ImGuiTableFlags_RowBg | ImGuiTableFlags_NoPadOuterX |
+                                   ImGuiTableFlags_BordersInnerH |
+                                   ImGuiTableFlags_SizingStretchProp))
+        {
+            return;
+        }
+        ImGui::TableSetupColumn("Assets", ImGuiTableColumnFlags_WidthStretch);
         for (const auto& entry : entries)
         {
             const auto path = entry.path();
             std::error_code error;
             const bool directory = entry.is_directory(error);
+            if (error)
+                continue;
             const std::string name = path.filename().string();
             if (!m_Filter.empty() && Lower(name).find(Lower(m_Filter.data())) == std::string::npos)
             {
                 continue;
             }
-            if (grid)
-            {
-                if (!gridTable)
-                    break;
-                if (visibleCount % static_cast<std::size_t>(columns) == 0)
-                    ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(
-                    static_cast<int>(visibleCount % static_cast<std::size_t>(columns)));
-                ImGui::BeginGroup();
-            }
-            else
-            {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-            }
+
+            ImGui::TableNextRow(0, 34.0F);
+            ImGui::TableSetColumnIndex(0);
             ImGui::PushID(path.generic_string().c_str());
-            if (grid)
             {
-                constexpr ImVec2 tileSize(104.0F, 112.0F);
-                constexpr ImVec2 previewSize(96.0F, 72.0F);
                 const bool selected = context.SelectedAsset == path;
-                const bool clicked = ImGui::InvisibleButton("##asset-tile", tileSize);
+                const bool clicked = ImGui::Selectable("##asset-row", selected,
+                                                       ImGuiSelectableFlags_SpanAllColumns |
+                                                           ImGuiSelectableFlags_AllowDoubleClick,
+                                                       ImVec2(0.0F, 34.0F));
                 const bool hovered = ImGui::IsItemHovered();
-                const ImVec2 tileOrigin = ImGui::GetItemRectMin();
+                const ImVec2 rowMin = ImGui::GetItemRectMin();
+                const ImVec2 rowMax = ImGui::GetItemRectMax();
                 ImDrawList* drawList = ImGui::GetWindowDrawList();
-                const ImVec2 tileEnd(tileOrigin.x + tileSize.x, tileOrigin.y + tileSize.y);
-                const ImU32 background = ImGui::GetColorU32(selected  ? ImGuiCol_HeaderActive
-                                                            : hovered ? ImGuiCol_FrameBgHovered
-                                                                      : ImGuiCol_FrameBg);
-                drawList->AddRectFilled(tileOrigin, tileEnd, background, 5.0F);
-                if (selected)
-                    drawList->AddRect(tileOrigin, tileEnd,
-                                      ImGui::GetColorU32(ImGuiCol_NavHighlight), 5.0F, 0, 2.0F);
-                const ImVec2 iconOrigin(tileOrigin.x + (tileSize.x - previewSize.x) * 0.5F,
-                                        tileOrigin.y + 5.0F);
-                const ImVec2 iconEnd(iconOrigin.x + previewSize.x, iconOrigin.y + previewSize.y);
+                const float iconSize = 22.0F;
+                const ImVec2 iconOrigin(rowMin.x + 6.0F,
+                                        rowMin.y + (rowMax.y - rowMin.y - iconSize) * 0.5F);
                 if (!directory && context.Resources != nullptr && IsImagePath(path))
                 {
                     auto image = m_ThumbnailCache.Get(*context.Resources, path);
-                    if (image)
+                    if (image && (*image)->Width > 0 && (*image)->Height > 0)
                     {
                         const GLuint texture = GetTexture(path, **image);
-                        const float scale = std::min(previewSize.x / float((*image)->Width),
-                                                     previewSize.y / float((*image)->Height));
-                        const ImVec2 imageSize(float((*image)->Width) * scale,
-                                               float((*image)->Height) * scale);
-                        const ImVec2 imageOrigin(
-                            iconOrigin.x + (previewSize.x - imageSize.x) * 0.5F,
-                            iconOrigin.y + (previewSize.y - imageSize.y) * 0.5F);
+                        const float scale =
+                            std::min(iconSize / static_cast<float>((*image)->Width),
+                                     iconSize / static_cast<float>((*image)->Height));
+                        const ImVec2 imageSize(static_cast<float>((*image)->Width) * scale,
+                                               static_cast<float>((*image)->Height) * scale);
+                        const ImVec2 imagePosition(iconOrigin.x + (iconSize - imageSize.x) * 0.5F,
+                                                   iconOrigin.y + (iconSize - imageSize.y) * 0.5F);
                         drawList->AddImage(
-                            static_cast<ImTextureID>(texture), imageOrigin,
-                            ImVec2(imageOrigin.x + imageSize.x, imageOrigin.y + imageSize.y));
+                            static_cast<ImTextureID>(texture), imagePosition,
+                            ImVec2(imagePosition.x + imageSize.x, imagePosition.y + imageSize.y));
                     }
                     else
                     {
-                        DrawFileIconAt(path, false, iconOrigin, previewSize);
+                        DrawFileIconAt(path, false, iconOrigin, ImVec2(iconSize, iconSize));
                     }
                 }
                 else
                 {
-                    DrawFileIconAt(path, directory, iconOrigin, previewSize);
+                    DrawFileIconAt(path, directory, iconOrigin, ImVec2(iconSize, iconSize));
                 }
-                const ImVec2 labelPosition(tileOrigin.x + 5.0F,
-                                           tileOrigin.y + previewSize.y + 10.0F);
-                drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(), labelPosition,
-                                  ImGui::GetColorU32(ImGuiCol_Text), name.c_str(), nullptr,
-                                  tileSize.x - 10.0F);
+
+                const float textY =
+                    rowMin.y + (rowMax.y - rowMin.y - ImGui::GetTextLineHeight()) * 0.5F;
+                const ImVec2 namePosition(rowMin.x + 36.0F, textY);
+                const std::string type =
+                    directory ? "Folder"
+                              : (path.extension().empty() ? "File" : path.extension().string());
+                const ImVec2 typeSize = ImGui::CalcTextSize(type.c_str());
+                const float rightPadding = 10.0F;
+                const float typeX =
+                    std::max(namePosition.x + 12.0F, rowMax.x - typeSize.x - rightPadding);
+                drawList->PushClipRect(namePosition, ImVec2(typeX - 8.0F, rowMax.y), true);
+                drawList->AddText(namePosition, ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
+                drawList->PopClipRect();
+                drawList->AddText(ImVec2(typeX, textY), ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                                  type.c_str());
+
                 if (clicked)
                     context.SelectedAsset = path;
                 if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
@@ -617,47 +608,14 @@ private:
                 }
                 DrawAssetContextMenu(path, directory, name, context);
             }
-            else
-            {
-                DrawFileIcon(path, directory, ImVec2(22, 22));
-                ImGui::Dummy(ImVec2(22, 22));
-                ImGui::SameLine(0.0F, 8.0F);
-                if (ImGui::Selectable(name.c_str(), context.SelectedAsset == path,
-                                      ImGuiSelectableFlags_SpanAllColumns |
-                                          ImGuiSelectableFlags_AllowDoubleClick))
-                {
-                    context.SelectedAsset = path;
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                    {
-                        if (directory)
-                            NavigateTo(path, context);
-                        else
-                        {
-                            auto opened = context.OpenFile(path);
-                            context.Status =
-                                opened ? "Opened " + name : ErrorMessage(opened.error());
-                        }
-                    }
-                }
-                DrawAssetContextMenu(path, directory, name, context);
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextColored(Color(directory ? 0xe6b85c : FileColor(path)), "%s",
-                                   directory ? "FOLDER" : path.extension().string().c_str());
-            }
             ImGui::PopID();
-            if (grid)
+            if (ImGui::IsItemHovered())
             {
-                ImGui::EndGroup();
-                if (ImGui::IsItemHovered())
-                {
-                    ImGui::SetTooltip("%s\n%s", path.filename().string().c_str(),
-                                      path.extension().string().c_str());
-                }
+                ImGui::SetTooltip("%s\n%s", path.filename().string().c_str(),
+                                  path.extension().string().c_str());
             }
-            ++visibleCount;
         }
-        if (gridTable)
-            ImGui::EndTable();
+        ImGui::EndTable();
     }
 
     void NavigateTo(const std::filesystem::path& path, EditorPanelContext& context)
@@ -687,7 +645,6 @@ private:
     std::filesystem::path m_RenamePath;
     std::array<char, 256> m_RenameBuffer{};
     bool m_OpenRenamePopup = false;
-    bool m_ListView = false;
 
     static bool IsImagePath(const std::filesystem::path& path)
     {

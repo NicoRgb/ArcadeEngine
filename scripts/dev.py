@@ -160,10 +160,6 @@ def main() -> int:
             raise RuntimeError("Git is required to initialize the pinned submodules.")
         prepare_windows_git_environment(git)
         run([git, "submodule", "update", "--init", "--recursive"])
-        # ImGui's checked-in gitlink predates the docking API used by the editor.
-        # Honor the docking branch configured in .gitmodules after initializing
-        # the repository's otherwise pinned submodules.
-        run([git, "submodule", "update", "--init", "--remote", "extern/imgui"])
 
         msvc_environment = setup_msvc_environment()
         if msvc_environment is not None:

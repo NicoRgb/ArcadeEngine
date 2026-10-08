@@ -1,5 +1,6 @@
 #include "Application/Application.hpp"
 #include "Assets/AssetManager.hpp"
+#include "Assets/ShaderAsset.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -65,18 +66,41 @@ TEST_CASE("Asset indexing includes ordinary files and keys them by relative path
     std::filesystem::create_directories(root / "second");
     std::ofstream(root / "first" / "same.arcade-test") << "first";
     std::ofstream(root / "second" / "same.arcade-test") << "second";
+    std::ofstream(root / "preview.hlsl") << "float4 main() : SV_Target { return 1; }";
 
     AssetManager manager;
     REQUIRE(manager.IndexAssets(root));
-    CHECK(manager.IndexedAssetCount() == 2);
+    CHECK(manager.IndexedAssetCount() == 3);
     CHECK(manager.FindAsset("first/same.arcade-test"));
     CHECK(manager.FindAsset("second/same.arcade-test"));
+    auto shader = manager.FindAsset("preview.hlsl");
+    REQUIRE(shader);
+    auto shaderAsset = shader->DynamicCast<ShaderAsset>();
+    REQUIRE(shaderAsset);
+    CHECK(shaderAsset->Source().find("SV_Target") != std::string::npos);
     CHECK_FALSE(manager.FindAsset("same.arcade-test"));
     CHECK_FALSE(manager.IndexAssets(root));
+
+    std::filesystem::remove(root / "second" / "same.arcade-test");
+    std::ofstream(root / "first" / "new.arcade-test") << "new";
+    std::ofstream(root / "preview.hlsl", std::ios::trunc)
+        << "float4 main() : SV_Target { return 0; }";
+    REQUIRE(manager.RescanAssets(root));
+    CHECK(manager.IndexedAssetCount() == 3);
+    CHECK(manager.FindAsset("first/same.arcade-test"));
+    CHECK(manager.FindAsset("first/new.arcade-test"));
+    CHECK_FALSE(manager.FindAsset("second/same.arcade-test"));
+    auto rescannedShader = manager.FindAsset("preview.hlsl");
+    REQUIRE(rescannedShader);
+    auto rescannedShaderAsset = rescannedShader->DynamicCast<ShaderAsset>();
+    REQUIRE(rescannedShaderAsset);
+    CHECK(rescannedShaderAsset->Source().find("return 0") != std::string::npos);
+    CHECK(rescannedShaderAsset->Source().find("return 1") == std::string::npos);
 }
 
 TEST_CASE("Asset indexing rejects non-directories", "[assets]")
 {
+    Application application;
     TemporaryDirectory temporaryDirectory;
     AssetManager manager;
     CHECK_FALSE(manager.IndexAssets(temporaryDirectory.Path() / "missing"));
