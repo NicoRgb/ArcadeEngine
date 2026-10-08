@@ -1,6 +1,7 @@
 #include "ArcadeEditor/EditorPanel.hpp"
 #include "ArcadeEditor/EditorTheme.hpp"
 #include "EditorPanelFactories.hpp"
+#include "Assets/AssetManager.hpp"
 
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -69,6 +70,102 @@ bool InputMultiline(std::string& text, const char* id, const ImVec2& size)
                                      ImGuiInputTextFlags_AllowTabInput |
                                          ImGuiInputTextFlags_CallbackResize,
                                      ResizeTextBuffer, &text);
+}
+
+bool InputString(std::string& text, const char* id)
+{
+    return ImGui::InputText(id, text.data(), text.capacity() + 1,
+                            ImGuiInputTextFlags_CallbackResize, ResizeTextBuffer, &text);
+}
+
+bool DrawMetadataValue(std::string_view label, json& value)
+{
+    bool changed = false;
+    if (value.is_object() || value.is_array())
+    {
+        const std::string title = std::string(label) +
+                                  (value.is_object() ? "  {" : "  [") +
+                                  std::to_string(value.size()) +
+                                  (value.is_object() ? "}" : "]");
+        if (ImGui::TreeNode(title.c_str()))
+        {
+            if (value.is_object())
+            {
+                for (auto it = value.begin(); it != value.end(); ++it)
+                {
+                    ImGui::PushID(it.key().c_str());
+                    changed |= DrawMetadataValue(it.key(), it.value());
+                    ImGui::PopID();
+                }
+            }
+            else
+            {
+                for (std::size_t i = 0; i < value.size(); ++i)
+                {
+                    ImGui::PushID(static_cast<int>(i));
+                    changed |= DrawMetadataValue("[" + std::to_string(i) + "]", value[i]);
+                    ImGui::PopID();
+                }
+            }
+            ImGui::TreePop();
+        }
+        return changed;
+    }
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(std::string(label).c_str());
+    ImGui::SameLine(150.0F);
+    ImGui::SetNextItemWidth(-1.0F);
+    if (value.is_string())
+    {
+        std::string text = value.get<std::string>();
+        if (InputString(text, "##value"))
+        {
+            value = std::move(text);
+            changed = true;
+        }
+    }
+    else if (value.is_boolean())
+    {
+        bool flag = value.get<bool>();
+        if (ImGui::Checkbox("##value", &flag))
+        {
+            value = flag;
+            changed = true;
+        }
+    }
+    else if (value.is_number_unsigned())
+    {
+        uint64_t number = value.get<uint64_t>();
+        if (ImGui::InputScalar("##value", ImGuiDataType_U64, &number))
+        {
+            value = number;
+            changed = true;
+        }
+    }
+    else if (value.is_number_integer())
+    {
+        int64_t number = value.get<int64_t>();
+        if (ImGui::InputScalar("##value", ImGuiDataType_S64, &number))
+        {
+            value = number;
+            changed = true;
+        }
+    }
+    else if (value.is_number_float())
+    {
+        double number = value.get<double>();
+        if (ImGui::InputDouble("##value", &number, 0.0, 0.0, "%.6g"))
+        {
+            value = number;
+            changed = true;
+        }
+    }
+    else
+    {
+        ImGui::TextDisabled("null");
+    }
+    return changed;
 }
 
 class CodeFileEditor : public EditorFileEditor
@@ -332,7 +429,7 @@ public:
 
     void Draw(EditorPanelContext& context) override
     {
-        ImGui::TextColored(Color(0x88a0be), "SELECTION");
+        ImGui::TextColored(Color(0x88a0be), "INSPECTOR");
         ImGui::Separator();
         if (context.SelectedDocument)
         {
@@ -357,17 +454,154 @@ public:
             }
             ImGui::BulletText("%zu bytes", context.SelectedDocument->Text().size());
         }
-        else if (!context.SelectedAsset.empty())
+
+        if (context.SelectedAsset.empty())
         {
-            ImGui::Text("%s", context.SelectedAsset.filename().string().c_str());
-            ImGui::TextDisabled("%s", context.SelectedAsset.extension().string().c_str());
-            ImGui::TextWrapped("%s", context.SelectedAsset.generic_string().c_str());
+            if (!context.SelectedDocument)
+                ImGui::TextDisabled("Select an asset to inspect its metadata.");
+            return;
         }
-        else
+
+        ImGui::Spacing();
+        ImGui::Text("%s", context.SelectedAsset.filename().string().c_str());
+        ImGui::TextDisabled("%s", context.SelectedAsset.extension().string().c_str());
+        ImGui::TextWrapped("%s", context.SelectedAsset.generic_string().c_str());
+
+        if (context.Assets == nullptr || context.AssetRoot.empty())
         {
-            ImGui::TextDisabled("Select an asset or document to inspect it.");
+            ImGui::TextDisabled("Asset manager is unavailable.");
+            return;
+        }
+
+        std::error_code assetPathError;
+        std::error_code rootPathError;
+        const auto absoluteAsset =
+            std::filesystem::weakly_canonical(context.SelectedAsset, assetPathError);
+        const auto canonicalRoot =
+            std::filesystem::weakly_canonical(context.AssetRoot, rootPathError);
+        if (assetPathError || rootPathError || !IsWithin(canonicalRoot, absoluteAsset))
+        {
+            ImGui::TextDisabled("Selected file is outside the active project asset folder.");
+            return;
+        }
+        const auto relativeAsset = absoluteAsset.lexically_relative(canonicalRoot).generic_string();
+        auto found = context.Assets->FindAsset(relativeAsset);
+        if (!found)
+        {
+            ImGui::TextDisabled("This file type has no registered engine asset metadata yet.");
+            return;
+        }
+
+        auto asset = std::move(*found);
+        if (!asset)
+        {
+            ImGui::TextDisabled("Asset resource is no longer available.");
+            return;
+        }
+        if (m_AssetId != asset.Id() || m_AssetPath != absoluteAsset)
+        {
+            m_AssetId = asset.Id();
+            m_AssetPath = absoluteAsset;
+            m_Original = asset->GetMetadata();
+            m_Draft = m_Original;
+        }
+
+        ImGui::Spacing();
+        ImGui::TextColored(Color(0x88a0be), "METADATA");
+        ImGui::Separator();
+        if (!m_Draft.is_object())
+        {
+            ImGui::TextColored(Color(0xff8279), "Asset metadata must be a JSON object.");
+            return;
+        }
+
+        for (auto it = m_Draft.begin(); it != m_Draft.end(); ++it)
+        {
+            ImGui::PushID(it.key().c_str());
+            if (it.key() == "type" || it.key() == "UUID")
+            {
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(it.key().c_str());
+                ImGui::SameLine(150.0F);
+                ImGui::TextDisabled("%s", it.value().dump().c_str());
+            }
+            else
+            {
+                (void)DrawMetadataValue(it.key(), it.value());
+            }
+            ImGui::PopID();
+        }
+
+        if (ImGui::Button("+ Add field"))
+            ImGui::OpenPopup("Add metadata field");
+        if (ImGui::BeginPopup("Add metadata field"))
+        {
+            InputString(m_NewFieldName, "##metadata-field-name");
+            ImGui::SameLine();
+            const char* kinds[] = {"String", "Boolean", "Integer", "Float", "Object", "Array"};
+            ImGui::SetNextItemWidth(100.0F);
+            ImGui::Combo("##metadata-field-type", &m_NewFieldType, kinds, 6);
+            if (ImGui::Button("Create") && !m_NewFieldName.empty() &&
+                !m_Draft.contains(m_NewFieldName))
+            {
+                switch (m_NewFieldType)
+                {
+                case 0: m_Draft[m_NewFieldName] = ""; break;
+                case 1: m_Draft[m_NewFieldName] = false; break;
+                case 2: m_Draft[m_NewFieldName] = int64_t{0}; break;
+                case 3: m_Draft[m_NewFieldName] = 0.0; break;
+                case 4: m_Draft[m_NewFieldName] = json::object(); break;
+                case 5: m_Draft[m_NewFieldName] = json::array(); break;
+                }
+                m_NewFieldName.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
+        const bool dirty = m_Draft != m_Original;
+        ImGui::Spacing();
+        ImGui::BeginDisabled(!dirty);
+        if (ImGui::Button("Apply"))
+        {
+            for (auto it = m_Draft.begin(); it != m_Draft.end(); ++it)
+            {
+                const auto original = m_Original.find(it.key());
+                if (original == m_Original.end() || original.value() != it.value())
+                {
+                    auto saved = asset->SetMetadataField(it.key(), it.value());
+                    if (!saved)
+                    {
+                        context.Status = ErrorMessage(saved.error());
+                        m_Original = asset->GetMetadata();
+                        m_Draft = m_Original;
+                        ImGui::EndDisabled();
+                        return;
+                    }
+                }
+            }
+            m_Original = asset->GetMetadata();
+            m_Draft = m_Original;
+            context.Status = "Asset metadata saved";
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Discard"))
+            m_Draft = m_Original;
+        ImGui::EndDisabled();
+        if (dirty)
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("Unsaved changes");
         }
     }
+
+private:
+    ResourceId m_AssetId{};
+    std::filesystem::path m_AssetPath;
+    json m_Original = json::object();
+    json m_Draft = json::object();
+    std::string m_NewFieldName;
+    int m_NewFieldType = 0;
 };
 
 class ConsolePanel final : public EditorPanel

@@ -126,7 +126,15 @@ public:
 
     void Draw(EditorPanelContext& context) override
     {
-        if (m_Root != context.AssetRoot)
+        std::error_code rootError;
+        const auto requestedRoot = std::filesystem::weakly_canonical(context.AssetRoot, rootError);
+        if (rootError)
+        {
+            ImGui::TextColored(Color(0xff766f), "Project asset folder is unavailable: %s",
+                               rootError.message().c_str());
+            return;
+        }
+        if (m_Root != requestedRoot)
         {
             if (context.Resources != nullptr)
                 m_ThumbnailCache.Clear(*context.Resources);
@@ -138,14 +146,7 @@ public:
             m_GpuTextures.clear();
             m_ModifiedTimes.clear();
             m_FolderCache.clear();
-            std::error_code error;
-            m_Root = std::filesystem::weakly_canonical(context.AssetRoot, error);
-            if (error)
-            {
-                ImGui::TextColored(Color(0xff766f), "Project asset folder is unavailable: %s",
-                                   error.message().c_str());
-                return;
-            }
+            m_Root = requestedRoot;
             m_Current = m_Root;
             m_LastScan = {};
             auto watching = m_Watcher.Start(m_Root);
@@ -524,11 +525,15 @@ private:
         ImGui::TableSetupColumn("Assets", ImGuiTableColumnFlags_WidthStretch);
         for (const auto& entry : entries)
         {
+            if (entry.is_regular_file() && entry.path().extension() == ".asset")
+                continue;
+
             const auto path = entry.path();
             std::error_code error;
             const bool directory = entry.is_directory(error);
             if (error)
                 continue;
+
             const std::string name = path.filename().string();
             if (!m_Filter.empty() && Lower(name).find(Lower(m_Filter.data())) == std::string::npos)
             {

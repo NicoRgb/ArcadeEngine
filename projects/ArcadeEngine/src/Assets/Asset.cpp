@@ -21,6 +21,12 @@ Result<void> Asset::SetMetadataField(std::string_view key, json value)
         return MAKE_ERROR_MSG(Error::InvalidState, "Asset metadata must be a JSON object.");
     }
 
+    const auto existing = m_Metadata.find(std::string(key));
+    if (existing != m_Metadata.end() && *existing == value)
+    {
+        return {};
+    }
+
     json updatedMetadata = m_Metadata;
     updatedMetadata[std::string(key)] = std::move(value);
     auto written = WriteMetadata(updatedMetadata);
@@ -80,9 +86,9 @@ Result<void> Asset::WriteMetadata(const json& metadata) const
         }
     }
 
-#if defined(_WIN32)
-    if (!MoveFileExW(temporaryPath.c_str(), metadataPath.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+#ifdef _WIN32
+    if (MoveFileExW(temporaryPath.c_str(), metadataPath.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0)
     {
         const auto error =
             std::error_code(static_cast<int>(GetLastError()), std::system_category());

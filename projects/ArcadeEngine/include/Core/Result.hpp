@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <expected>
+#include <print>
 #include <string>
 #include <system_error>
 #include <type_traits>
@@ -108,7 +109,7 @@ T ResultOrThrow(Result<T> res)
     if (!res)
     {
         const std::string message = ErrorMessage(res.error());
-        std::fprintf(stderr, "ResultOrThrow called on Error-Result %s\n", message.c_str());
+        std::println(stderr, "ResultOrThrow called on Error-Result {}", message);
         std::exit(EXIT_FAILURE);
     }
 

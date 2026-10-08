@@ -7,10 +7,13 @@ ARCADE_ENGINE_API std::unexpected<ErrorInfo> MakeError(Error code, std::string m
                                                        std::error_code systemCode, std::string file,
                                                        uint64_t line)
 {
-    std::filesystem::path filename = std::filesystem::path(file).filename();
-
     ErrorInfo info(code, std::move(message), systemCode);
+
+#ifdef LOG_MAKE_ERROR
+    std::filesystem::path filename = std::filesystem::path(file).filename();
     LOG_ERROR("MakeError called: Error::{} at {}:{}", ErrorMessage(info), filename.string(), line);
+#endif
+
     return std::unexpected<ErrorInfo>(info);
 }
 
