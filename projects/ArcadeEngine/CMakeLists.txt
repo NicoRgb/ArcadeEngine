@@ -13,10 +13,11 @@ target_compile_definitions(ArcadeEngine PRIVATE ARCADE_ENGINE_BUILD GLFW_INCLUDE
 target_include_directories(ArcadeEngine PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     "$<INSTALL_INTERFACE:include>"
+    PRIVATE "${PROJECT_SOURCE_DIR}/extern/slang/include"
 )
 target_link_libraries(ArcadeEngine
     PUBLIC nlohmann_json
-    PRIVATE glfw glm::glm nvrhi ${ARCADE_NVRHI_BACKEND}
+    PRIVATE glfw glm::glm nvrhi ${ARCADE_NVRHI_BACKEND} slang
 )
 
 if(WIN32)

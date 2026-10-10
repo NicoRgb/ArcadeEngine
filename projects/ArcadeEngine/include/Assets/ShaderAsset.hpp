@@ -1,15 +1,48 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <utility>
+#include <vector>
 
-#include "Application/Application.hpp"
 #include "AssetManager.hpp"
 
-#include <fstream>
-#include <iterator>
-#include <stdexcept>
+enum class ShaderStage : uint8_t
+{
+    Vertex,
+    Hull,
+    Domain,
+    Geometry,
+    Fragment,
+    Compute,
+    RayGeneration,
+    Intersection,
+    AnyHit,
+    ClosestHit,
+    Miss,
+    Callable,
+    Mesh,
+    Amplification,
+    Unknown,
+};
 
-class ShaderAsset;
+struct ShaderParameter
+{
+    std::string Name;
+    std::string TypeName;
+    uint32_t BindingIndex = std::numeric_limits<uint32_t>::max();
+    uint32_t BindingSpace = std::numeric_limits<uint32_t>::max();
+};
+
+struct ShaderEntryPoint
+{
+    std::string Name;
+    ShaderStage Stage = ShaderStage::Unknown;
+    std::vector<std::byte> Code;
+    std::vector<ShaderParameter> Parameters;
+};
 
 class ShaderAsset : public Asset
 {
@@ -17,39 +50,51 @@ public:
     ShaderAsset(std::filesystem::path path, json metadata)
         : Asset(std::move(path), std::move(metadata))
     {
-        auto loaded = Reload();
-        if (!loaded)
-            throw std::runtime_error(ErrorMessage(loaded.error()));
     }
 
-    ARCADE_ENGINE_API ~ShaderAsset() override = default;
-    Result<void> Reload()
-    {
-        LOG_INFO("Reloading ShaderAsset {}", m_Path.filename().string());
+    ARCADE_ENGINE_API ~ShaderAsset() override;
 
-        std::ifstream input(m_Path, std::ios::binary);
-        if (!input)
-        {
-            return MAKE_ERROR_MSG(Error::NotFound, "Could not open shader: " + m_Path.string());
-        }
-        std::string source((std::istreambuf_iterator<char>(input)),
-                           std::istreambuf_iterator<char>());
-        if (input.bad())
-        {
-            return MAKE_ERROR_MSG(Error::IoFailure, "Could not read shader: " + m_Path.string());
-        }
-        m_Source = std::move(source);
-        return {};
-    }
+    Result<void> Load() override;
 
-    void Load() override
-    {
-        auto loaded = Reload();
-        if (!loaded)
-            throw std::runtime_error(ErrorMessage(loaded.error()));
-    }
     [[nodiscard]] const std::string& Source() const noexcept { return m_Source; }
+    [[nodiscard]] const std::string& GetSource() const noexcept { return Source(); }
+    [[nodiscard]] const std::vector<ShaderEntryPoint>& GetEntryPoints() const noexcept;
+    [[nodiscard]] const std::vector<ShaderParameter>& GetGlobalParameters() const noexcept;
 
 private:
+    struct CompiledData
+    {
+        struct Dependency
+        {
+            std::filesystem::path Path;
+            std::filesystem::file_time_type ModifiedTime;
+        };
+
+        std::vector<ShaderEntryPoint> EntryPoints;
+        std::vector<ShaderParameter> GlobalParameters;
+        std::vector<Dependency> Dependencies;
+
+        bool IsFresh(const std::string& source) const
+        {
+            if (Dependencies.empty())
+            {
+                return false;
+            }
+            for (const Dependency& dependency : Dependencies)
+            {
+                std::error_code error;
+                const auto modifiedTime = std::filesystem::last_write_time(dependency.Path, error);
+                if (error || modifiedTime != dependency.ModifiedTime)
+                {
+                    return false;
+                }
+            }
+            return source == Source;
+        }
+
+        std::string Source;
+    };
+
     std::string m_Source;
+    std::unique_ptr<CompiledData> m_CompiledData;
 };

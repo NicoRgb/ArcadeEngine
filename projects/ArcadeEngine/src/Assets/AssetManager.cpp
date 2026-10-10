@@ -7,6 +7,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
+#include <unordered_set>
 #include <vector>
 
 class AssetRegistry
@@ -62,6 +63,11 @@ AssetRegisteree::AssetRegisteree(
 
 Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
 {
+    return IndexAssetsInternal(directory, false);
+}
+
+Result<void> AssetManager::IndexAssetsInternal(const std::filesystem::path& directory, bool rescan)
+{
     LOG_INFO("Indexing asset directory {}", directory.string());
 
     std::error_code error;
@@ -83,6 +89,7 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
         return MAKE_ERROR(Error::InvalidArgument);
     }
 
+    std::unordered_set<AssetKey, AssetKeyHash> foundAssets;
     while (it != end)
     {
         const auto dirEntry = *it;
@@ -103,10 +110,15 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
                 return MAKE_ERROR(Error::InvalidArgument);
             }
 
-            auto res = IndexAsset(absolutePath, relativePath.generic_string());
+            const std::string assetKey = relativePath.generic_string();
+            auto res = IndexAsset(absolutePath, assetKey, rescan);
             if (!res)
             {
                 return FORWARD_ERROR(res);
+            }
+            if (rescan && m_ByKey.contains(AssetKey{.Name = assetKey}))
+            {
+                foundAssets.insert(AssetKey{.Name = assetKey});
             }
         }
 
@@ -117,6 +129,31 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
         }
     }
 
+    if (rescan)
+    {
+        auto& resourceManager = Application::Get().GetResourceManager();
+        for (auto assetIterator = m_ByKey.begin(); assetIterator != m_ByKey.end();)
+        {
+            if (foundAssets.contains(assetIterator->first))
+            {
+                ++assetIterator;
+                continue;
+            }
+
+            const auto asset = m_Assets.find(assetIterator->second);
+            if (asset != m_Assets.end())
+            {
+                auto unloaded = resourceManager.Unload(asset->second.Id());
+                if (!unloaded && unloaded.error().Code != Error::NotFound)
+                {
+                    return FORWARD_ERROR(unloaded);
+                }
+                m_Assets.erase(asset);
+            }
+            assetIterator = m_ByKey.erase(assetIterator);
+        }
+    }
+
     LOG_INFO("Indexed {} registered assets", IndexedAssetCount());
 
     return {};
@@ -124,28 +161,11 @@ Result<void> AssetManager::IndexAssets(const std::filesystem::path& directory)
 
 Result<void> AssetManager::RescanAssets(const std::filesystem::path& directory)
 {
-    auto& resourceManager = Application::Get().GetResourceManager();
-    std::vector<ResourceId> oldResources;
-    oldResources.reserve(m_Assets.size());
-    for (const auto& [id, asset] : m_Assets)
-    {
-        (void)id;
-        oldResources.push_back(asset.Id());
-    }
-    for (const ResourceId id : oldResources)
-    {
-        auto unloaded = resourceManager.Unload(id);
-        if (!unloaded && unloaded.error().Code != Error::NotFound)
-        {
-            return FORWARD_ERROR(unloaded);
-        }
-    }
-    m_Assets.clear();
-    m_ByKey.clear();
-    return IndexAssets(directory);
+    return IndexAssetsInternal(directory, true);
 }
 
-Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::string_view assetKey)
+Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::string_view assetKey,
+                                      bool rescan)
 {
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error) || error)
@@ -155,9 +175,35 @@ Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::st
 
     const std::string extension = path.extension().string();
     const AssetKey key{.Name = std::string(assetKey)};
-    if (m_ByKey.contains(key))
+    const auto existingKey = m_ByKey.find(key);
+    if (existingKey != m_ByKey.end())
     {
-        return MAKE_ERROR(Error::InvalidArgument);
+        if (!rescan)
+        {
+            return MAKE_ERROR(Error::InvalidArgument);
+        }
+
+        const auto existingAsset = m_Assets.find(existingKey->second);
+        if (existingAsset != m_Assets.end() && existingAsset->second->GetPath() == path)
+        {
+            auto reloadResult = existingAsset->second->Reload();
+            if (!reloadResult)
+            {
+                return FORWARD_ERROR(reloadResult);
+            }
+            return {};
+        }
+
+        if (existingAsset != m_Assets.end())
+        {
+            auto unloaded = Application::Get().GetResourceManager().Unload(existingAsset->second.Id());
+            if (!unloaded && unloaded.error().Code != Error::NotFound)
+            {
+                return FORWARD_ERROR(unloaded);
+            }
+            m_Assets.erase(existingAsset);
+        }
+        m_ByKey.erase(existingKey);
     }
 
     const AssetRegistry::AssetDesc* matchingAssetType = nullptr;
@@ -218,6 +264,12 @@ Result<void> AssetManager::IndexAsset(const std::filesystem::path& path, std::st
     if (!metadataUpdated)
     {
         return FORWARD_ERROR(metadataUpdated);
+    }
+
+    auto loadResult = asset->LoadIfNeeded();
+    if (!loadResult)
+    {
+        return FORWARD_ERROR(loadResult);
     }
 
     m_Assets.emplace(id, std::move(asset));

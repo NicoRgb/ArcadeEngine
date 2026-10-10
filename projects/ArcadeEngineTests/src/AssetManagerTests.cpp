@@ -14,7 +14,7 @@ class TestAsset final : public Asset
 {
 public:
     using Asset::Asset;
-    void Load() override {}
+    Result<void> Load() override { return {}; }
 };
 
 AssetRegisteree g_TestAssetRegistration(
@@ -77,7 +77,7 @@ TEST_CASE("Asset indexing includes ordinary files and keys them by relative path
     REQUIRE(shader);
     auto shaderAsset = shader->DynamicCast<ShaderAsset>();
     REQUIRE(shaderAsset);
-    CHECK(shaderAsset->Source().find("SV_Target") != std::string::npos);
+    CHECK(shaderAsset->GetSource().find("SV_Target") != std::string::npos);
     CHECK_FALSE(manager.FindAsset("same.arcade-test"));
     CHECK_FALSE(manager.IndexAssets(root));
 
@@ -94,8 +94,8 @@ TEST_CASE("Asset indexing includes ordinary files and keys them by relative path
     REQUIRE(rescannedShader);
     auto rescannedShaderAsset = rescannedShader->DynamicCast<ShaderAsset>();
     REQUIRE(rescannedShaderAsset);
-    CHECK(rescannedShaderAsset->Source().find("return 0") != std::string::npos);
-    CHECK(rescannedShaderAsset->Source().find("return 1") == std::string::npos);
+    CHECK(rescannedShaderAsset->GetSource().find("return 0") != std::string::npos);
+    CHECK(rescannedShaderAsset->GetSource().find("return 1") == std::string::npos);
 }
 
 TEST_CASE("Asset indexing rejects non-directories", "[assets]")

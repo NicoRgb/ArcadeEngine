@@ -4,6 +4,7 @@ struct VertexOutput
     float3 Color : COLOR0;
 };
 
+[shader("vertex")]
 VertexOutput VertexMain(uint vertexId : SV_VertexID)
 {
     const float2 positions[3] = {
@@ -17,6 +18,7 @@ VertexOutput VertexMain(uint vertexId : SV_VertexID)
     return output;
 }
 
+[shader("fragment")]
 float4 PixelMain(VertexOutput input) : SV_Target0
 {
     return float4(input.Color, 1.0);

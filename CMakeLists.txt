@@ -108,6 +108,7 @@ arcade_require_submodule(extern/glfw CMakeLists.txt)
 arcade_require_submodule(extern/glm CMakeLists.txt)
 arcade_require_submodule(extern/json single_include/nlohmann/json.hpp)
 arcade_require_submodule(extern/nvrhi CMakeLists.txt)
+arcade_require_submodule(extern/slang CMakeLists.txt)
 
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -141,6 +142,23 @@ else()
     set(ARCADE_NVRHI_BACKEND nvrhi_vk)
 endif()
 add_subdirectory(extern/nvrhi EXCLUDE_FROM_ALL)
+
+# ArcadeEngine uses Slang's compiler API at runtime. Keep the compiler library
+# while omitting Slang's standalone tools and test programs from the engine build.
+set(SLANG_ENABLE_GFX OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_SLANGD OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_SLANGC OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_SLANGI OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_SLANGRT OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_SLANG_GLSLANG OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_SLANG_PROXY OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SLANG_ENABLE_REPLAYER OFF CACHE BOOL "" FORCE)
+# ArcadeEngine uses Slang's compiler and reflection APIs; the optional LLVM JIT
+# backend is not required, and disabling it avoids version-tag-based downloads.
+set(SLANG_SLANG_LLVM_FLAVOR DISABLE CACHE STRING "" FORCE)
+add_subdirectory(extern/slang EXCLUDE_FROM_ALL)
 
 if(NOT WIN32)
     # Vulkan remains a platform loader for NVRHI's Vulkan backend and native
